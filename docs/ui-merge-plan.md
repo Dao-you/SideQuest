@@ -8,7 +8,9 @@
   - `3cc0076 docs(ui): audit visual polish opportunities`
   - `538d7b6 fix(frontend): polish responsive activity UI`
 - 驗證：`npm test` 9/9、`npm run build`、`git diff --check` 通過
-- Cloud Run：尚未部署；本機 Cloud SDK 存在，但目前沒有 active gcloud account
+- Cloud Run 測試副本：已部署至 `sidequest-demo-ui-polish`
+- 測試網址：<https://sidequest-demo-ui-polish-917216410511.asia-east1.run.app>
+- 測試 image：`frontend-ui-polish`
 
 ## 建議合併流程
 
