@@ -11,6 +11,7 @@
 - Cloud Run 測試副本：已部署至 `sidequest-demo-ui-polish`
 - 測試網址：<https://sidequest-demo-ui-polish-cjpexdy77a-de.a.run.app>
 - 測試 image：`frontend-ui-polish`
+- 地圖修正驗證：Cloud Build `7041d8b4-7919-4f9a-8b46-fdff6f2c8a0f` 成功，revision `sidequest-demo-ui-polish-00002-9vb` 已載入 Google Maps 與活動標記
 
 ## 建議合併流程
 
