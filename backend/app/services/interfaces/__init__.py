@@ -5,7 +5,7 @@ from typing import Any, List, Optional
 from app.models.agent import FeedbackRequest, FeedbackResponse, QuickPromptsResponse
 from app.models.crowd import HeatmapPoint, VenueLiveStatus
 from app.models.event import Event, EventFilter
-from app.models.places import PlaceDetails, RouteComfort
+from app.models.places import PlaceDetails, RouteComfort, ShadeTimePeriod
 from app.models.user import (
     CalendarConflictCheckRequest,
     CalendarConflictCheckResponse,
@@ -96,6 +96,7 @@ class PlacesServiceInterface(ABC):
         dest_lng: float,
         dest_name: str = "目的地",
         prioritize_shade: bool = True,
+        shade_time_period: ShadeTimePeriod = ShadeTimePeriod.MORNING,
         preference: str = "fastest",
         wheelchair_accessible: bool = False,
         departure_time: Optional[str] = None,

@@ -6,7 +6,7 @@ import httpx
 
 from app.config import settings
 from app.logging_config import logger
-from app.models.places import MultimodalSummary, PlaceDetails, RouteComfort, RouteSegment
+from app.models.places import MultimodalSummary, PlaceDetails, RouteComfort, RouteSegment, ShadeTimePeriod
 from app.models.weather import MicroclimateResponse, SolarExposureResponse, UVRiskLevel, WeatherCondition
 from app.services.urban_shade_service import get_urban_shade_engine
 
@@ -173,6 +173,7 @@ class MapsService:
         dest_lng: float,
         dest_name: str = "目的地",
         prioritize_shade: bool = True,
+        shade_time_period: ShadeTimePeriod = ShadeTimePeriod.MORNING,
         preference: str = "fastest",
         wheelchair_accessible: bool = False,
         departure_time: Optional[str] = None,
@@ -181,7 +182,7 @@ class MapsService:
         shade_engine = get_urban_shade_engine()
         profile = shade_engine.match_urban_profile(dest_name)
         distance_meters = self._haversine_distance_meters(origin_lat, origin_lng, dest_lat, dest_lng)
-        
+
         # Calculate Multimodal Baseline Metrics
         walk_min = max(3, int(distance_meters / 70))
         walk_cal = int(walk_min * 4.2)
@@ -257,14 +258,15 @@ class MapsService:
                                         )
                                     )
 
-                            shade_pct, sun_mins, advice, comfort = shade_engine.calculate_route_shade_metrics(
+                            shade_pct, sun_mins, advice, comfort, shaded_meters = shade_engine.calculate_route_shade_metrics(
                                 dest_name=dest_name,
                                 distance_meters=dist_m,
                                 duration_minutes=dur_min,
                                 segments=segments,
                                 prioritize_shade=prioritize_shade,
+                                shade_time_period=shade_time_period,
                             )
-                            
+
                             multimodal = MultimodalSummary(
                                 walk_calories=walk_cal,
                                 walk_duration_minutes=walk_min,
@@ -289,7 +291,8 @@ class MapsService:
                                 comfort_score=comfort,
                                 route_advice=advice,
                                 sun_exposure_minutes=sun_mins,
-                                shaded_distance_meters=int(dist_m * (shade_pct / 100.0)),
+                                shaded_distance_meters=shaded_meters,
+                                shade_time_period=shade_time_period,
                                 accessibility_note="全線無障礙坡道與電梯直達" if is_wheelchair else "正常步行通道",
                                 crowd_note="離峰舒適車廂" if pref_key == "less_crowded" else "市區常規人流",
                                 multimodal=multimodal,
@@ -315,7 +318,7 @@ class MapsService:
 
         # Route Generation based on Preference
         is_underground_hub = profile.underground_coverage_pct >= 80 or profile.is_indoor_complex
-        
+
         if pref_key == "wheelchair" or is_wheelchair:
             # Wheelchair / Luggage / Stroller Accessible Route
             transit_duration = max(15, int(distance_meters / 340) + 8)
@@ -524,7 +527,7 @@ class MapsService:
                     is_accessible=True,
                 ),
             ]
-        elif pref_key == "more_shading" or prioritize_shade:
+        elif pref_key == "more_shading":
             # More Shading Preference
             transit_duration = max(13, int(distance_meters / 350) + 6)
             transit_summary = f"抗熱避曬專用路徑約 {transit_duration} 分鐘 (地下街＋騎樓高覆蓋)"
@@ -569,7 +572,7 @@ class MapsService:
                     instruction="步行至最近捷運/幹線站點",
                     duration_minutes=3,
                     distance_meters=220,
-                    is_shaded_or_underground=True,
+                    is_shaded_or_underground=False,
                     is_accessible=True,
                 ),
                 RouteSegment(
@@ -586,17 +589,18 @@ class MapsService:
                     instruction=f"出站步行抵達 {dest_name}",
                     duration_minutes=3,
                     distance_meters=180,
-                    is_shaded_or_underground=profile.arcade_walkway_pct >= 60,
+                    is_shaded_or_underground=False,
                     is_accessible=True,
                 ),
             ]
 
-        shade_pct, sun_mins, advice, comfort = shade_engine.calculate_route_shade_metrics(
+        shade_pct, sun_mins, advice, comfort, shaded_meters = shade_engine.calculate_route_shade_metrics(
             dest_name=dest_name,
             distance_meters=distance_meters,
             duration_minutes=transit_duration,
             segments=segments,
             prioritize_shade=prioritize_shade or pref_key == "more_shading",
+            shade_time_period=shade_time_period,
         )
 
         return RouteComfort(
@@ -610,7 +614,8 @@ class MapsService:
             comfort_score=comfort,
             route_advice=advice,
             sun_exposure_minutes=sun_mins,
-            shaded_distance_meters=int(distance_meters * (shade_pct / 100.0)),
+            shaded_distance_meters=shaded_meters,
+            shade_time_period=shade_time_period,
             accessibility_note=accessibility_note,
             crowd_note=crowd_note,
             multimodal=multimodal,

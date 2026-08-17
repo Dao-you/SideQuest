@@ -13,6 +13,14 @@ class TravelMode(str, Enum):
     BICYCLE = "BICYCLE"
 
 
+class ShadeTimePeriod(str, Enum):
+    """Preset demo scenarios used for deterministic shade estimates."""
+
+    MORNING = "morning"
+    NOON = "noon"
+    EVENING = "evening"
+
+
 class RoutePreference(str, Enum):
     """Supported route preference strategies."""
     FASTEST = "fastest"                # 經典/最快速
@@ -81,6 +89,10 @@ class RouteComfort(BaseModel):
     route_advice: str
     sun_exposure_minutes: float = Field(default=0.0, description="Estimated direct sun exposure duration in minutes")
     shaded_distance_meters: Optional[int] = Field(default=None, description="Total protected distance in meters")
+    shade_time_period: ShadeTimePeriod = Field(
+        default=ShadeTimePeriod.MORNING,
+        description="Hardcoded demo shade scenario: morning | noon | evening",
+    )
     accessibility_note: Optional[str] = Field(default=None, description="Wheelchair / stroller / luggage notes")
     crowd_note: Optional[str] = Field(default=None, description="Crowd dispersal advice for this route")
     multimodal: Optional[MultimodalSummary] = Field(default=None, description="Multi-modal travel comparisons")
@@ -97,6 +109,10 @@ class RouteComputeRequest(BaseModel):
     destination_name: Optional[str] = Field(default=None, description="Name of destination place")
     travel_mode: TravelMode = Field(default=TravelMode.TRANSIT, description="Base travel mode")
     prioritize_shade: bool = Field(default=True, description="Prioritize underground/shaded walkways")
+    shade_time_period: ShadeTimePeriod = Field(
+        default=ShadeTimePeriod.MORNING,
+        description="驗收用固定遮蔭時段：morning（09:00）、noon（12:30）、evening（17:30）",
+    )
     preference: RoutePreference = Field(default=RoutePreference.FASTEST, description="Routing preference strategy")
     wheelchair_accessible: bool = Field(default=False, description="Require step-free / wheelchair accessibility")
     departure_time: Optional[str] = Field(default=None, description="Optional ISO departure time or 'now'")

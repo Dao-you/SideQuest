@@ -12,39 +12,55 @@ const categoryColors = {
   '城市活動': '#5b8f89',
 }
 
+export const SHADE_TIME_SCENARIOS = Object.freeze([
+  { id: 'morning', label: '早上', time: '09:00', description: '斜射日照，建物與騎樓遮蔽較多' },
+  { id: 'noon', label: '正午', time: '12:30', description: '太陽高度最高，戶外曝曬最明顯' },
+  { id: 'evening', label: '傍晚', time: '17:30', description: '西斜日照，街廓陰影逐漸增加' },
+])
+
+const venueShadeByPeriod = Object.freeze({
+  morning: { openPlaza: 38, treeCanopy: 78, covered: 86, urban: 70 },
+  noon: { openPlaza: 18, treeCanopy: 65, covered: 78, urban: 55 },
+  evening: { openPlaza: 52, treeCanopy: 86, covered: 91, urban: 80 },
+})
+
 /**
- * Calculate realistic sun exposure and shade based on venue micro-morphology.
+ * Calculate deterministic demo shade based on venue morphology and time scenario.
  */
-function calculateVenueSolarExposure(event, isIndoor) {
+export function calculateVenueSolarExposure(event, isIndoor, shadeTimePeriod = 'morning') {
+  const period = venueShadeByPeriod[shadeTimePeriod] ? shadeTimePeriod : 'morning'
+  const values = venueShadeByPeriod[period]
+  const periodLabel = SHADE_TIME_SCENARIOS.find((scenario) => scenario.id === period)?.label || '早上'
+
   if (isIndoor) {
-    return { sun: 0, shade: 100, label: '室內空調 (0% 曝曬)' }
+    return { sun: 0, shade: 100, label: `${periodLabel} · 室內空調 (0% 曝曬)` }
   }
 
   const text = `${event.title} ${event.venue || ''} ${event.address || ''} ${event.category || ''}`
 
   // Taipei open plazas & riverfronts
   if (/自由廣場|河濱|大佳|戶外大草原|圓山廣場|野餐|碧潭/.test(text)) {
-    return { sun: 78, shade: 22, label: '開闊廣場 (78% 曝曬)' }
+    return { sun: 100 - values.openPlaza, shade: values.openPlaza, label: `${periodLabel} · 開闊廣場 (${values.openPlaza}% 遮蔭)` }
   }
 
   // Boulevard & dense tree canopy
   if (/仁愛|敦化|民生|大安森林|植物園|陽明山|青田/.test(text)) {
-    return { sun: 28, shade: 72, label: '林蔭大道 (72% 遮蔭)' }
+    return { sun: 100 - values.treeCanopy, shade: values.treeCanopy, label: `${periodLabel} · 林蔭大道 (${values.treeCanopy}% 遮蔭)` }
   }
 
   // Covered arcade (騎樓) and underground transit corridors
   if (/地下街|中山|赤峰|迪化|大稻埕|信義|南港|微風|新光|誠品|西門|大橋頭|忠孝/.test(text)) {
-    return { sun: 18, shade: 82, label: '騎樓/連通 (82% 遮蔭)' }
+    return { sun: 100 - values.covered, shade: values.covered, label: `${periodLabel} · 騎樓/連通 (${values.covered}% 遮蔭)` }
   }
 
   // Standard Taipei urban street canyon
-  return { sun: 35, shade: 65, label: '都會騎樓 (65% 遮蔭)' }
+  return { sun: 100 - values.urban, shade: values.urban, label: `${periodLabel} · 都會街廓 (${values.urban}% 遮蔭)` }
 }
 
 /**
  * Converts canonical EventRecord into the map & card presentation model.
  */
-export function toEventPlace(event, index) {
+export function toEventPlace(event, index, shadeTimePeriod = 'morning') {
   const dateRange = [event.startDate, event.endDate].filter(Boolean).join(' – ')
   const sourceUrl = event.sourceUrl || event.secondarySourceUrl || ''
 
@@ -54,7 +70,7 @@ export function toEventPlace(event, index) {
     : /室內|快閃|展覽|POP|店|文創|品牌商展|文化|動漫|藝術|咖啡|科技|館|廳|中心/.test(`${event.category}${event.title}`)
 
   // Realistic micro-morphology solar & shade calculation
-  const solarData = calculateVenueSolarExposure(event, isIndoor)
+  const solarData = calculateVenueSolarExposure(event, isIndoor, shadeTimePeriod)
 
   // Compute transit distance string
   let distance = '交通資訊請見活動來源'
@@ -86,6 +102,7 @@ export function toEventPlace(event, index) {
     sun: solarData.sun,
     shade: solarData.shade,
     sunLabel: solarData.label,
+    shadeTimePeriod,
     distance,
     distanceShort,
     rating: event.rating ? String(event.rating) : '4.8',

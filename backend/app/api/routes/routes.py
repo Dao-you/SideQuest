@@ -11,7 +11,15 @@ from app.services.interfaces import PlacesServiceInterface
 router = APIRouter(prefix="/routes", tags=["Routes"])
 
 
-@router.post("/compute", response_model=RouteComfort, summary="計算多元偏好之大眾運輸與遮陽抗熱路徑")
+@router.post(
+    "/compute",
+    response_model=RouteComfort,
+    summary="計算大眾運輸與固定時段遮蔭情境",
+    description=(
+        "取得多元偏好大眾運輸路線，並依驗收用固定情境 morning（09:00）、"
+        "noon（12:30）或 evening（17:30）估算步行路段遮蔭與曝曬時間。"
+    ),
+)
 async def compute_route(
     request: RouteComputeRequest,
     maps_service: PlacesServiceInterface = Depends(get_places_service_dep),
@@ -38,6 +46,7 @@ async def compute_route(
         dest_lng=request.destination_lng,
         dest_name=dest_name,
         prioritize_shade=request.prioritize_shade,
+        shade_time_period=request.shade_time_period,
         preference=pref_val,
         wheelchair_accessible=request.wheelchair_accessible,
         departure_time=request.departure_time,
@@ -764,14 +773,14 @@ async def visualize_routes(key: str = Query(default="", description="Optional Go
       document.getElementById('valScore').textContent = data.comfort_score + " 分";
       document.getElementById('valDist').textContent = data.total_distance_meters + " 公尺";
       document.getElementById('routeAdvice').textContent = data.route_advice;
-      
+
       if (data.multimodal) {{
         document.getElementById('valWalk').textContent = `${{data.multimodal.walk_calories}} 卡 / ${{data.multimodal.walk_duration_minutes}} 分鐘`;
         document.getElementById('valBike').textContent = `${{data.multimodal.bike_calories}} 卡 / $${{data.multimodal.bike_cost_twd}}`;
         document.getElementById('valTaxi').textContent = `~${{data.multimodal.taxi_duration_minutes}} 分鐘 / $${{data.multimodal.taxi_cost_twd}}`;
         document.getElementById('valTransit').textContent = `${{data.total_duration_minutes}} 分鐘`;
       }}
-      
+
       document.getElementById('accessNotes').textContent = data.accessibility_note ? `♿ ${{data.accessibility_note}}` : '';
       document.getElementById('crowdNotes').textContent = data.crowd_note ? `👥 ${{data.crowd_note}}` : '';
       document.getElementById('jsonViewer').textContent = JSON.stringify(data, null, 2);

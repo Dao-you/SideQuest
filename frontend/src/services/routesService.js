@@ -1,7 +1,82 @@
 /**
  * Routes & Transit Thermal Comfort Planning Service.
  */
-import { apiClient } from './apiClient'
+import { apiClient } from './apiClient.js'
+
+const fallbackShadeScenarios = Object.freeze({
+  morning: { label: '早上 09:00', shade: 65, exposure: 2.5, distance: 325 },
+  noon: { label: '正午 12:30', shade: 45, exposure: 3.9, distance: 225 },
+  evening: { label: '傍晚 17:30', shade: 75, exposure: 1.8, distance: 375 },
+})
+
+const googleWalkShadeScenarios = Object.freeze({
+  morning: { label: '早上 09:00', outdoor: 0.35, partial: 0.65, covered: 0.90 },
+  noon: { label: '正午 12:30', outdoor: 0.20, partial: 0.50, covered: 0.85 },
+  evening: { label: '傍晚 17:30', outdoor: 0.45, partial: 0.70, covered: 0.92 },
+})
+
+function isWalkingMode(mode) {
+  return ['WALK', 'WALKING'].includes(String(mode || '').toUpperCase())
+}
+
+function shadeRatioForInstruction(instruction, scenario) {
+  if (/地下|連通道|室內|站內|月台|underpass|underground/i.test(instruction)) return scenario.covered
+  if (/騎樓|林蔭|公園|arcade|tree/i.test(instruction)) return scenario.partial
+  return scenario.outdoor
+}
+
+/**
+ * Apply a deterministic demo scenario to the same Google Maps walking steps
+ * shown in the UI. Transit distance is intentionally excluded.
+ */
+export function applyShadeScenarioToGoogleRoute(route, shadeTimePeriod = 'morning') {
+  const scenario = googleWalkShadeScenarios[shadeTimePeriod] || googleWalkShadeScenarios.morning
+  let walkingDistanceMeters = 0
+  let walkingDurationMinutes = 0
+  let shadedDistanceMeters = 0
+  let sunExposureMinutes = 0
+
+  const segments = (route.segments || []).map((segment) => {
+    if (!isWalkingMode(segment.mode)) {
+      return { ...segment, segment_kind: 'transit', shade_percentage: null }
+    }
+
+    const distance = Math.max(0, Number(segment.distance_meters) || 0)
+    const duration = Math.max(0, Number(segment.duration_minutes) || 0)
+    const ratio = shadeRatioForInstruction(segment.instruction || '', scenario)
+    walkingDistanceMeters += distance
+    walkingDurationMinutes += duration
+    shadedDistanceMeters += distance * ratio
+    sunExposureMinutes += duration * (1 - ratio)
+
+    return {
+      ...segment,
+      segment_kind: 'walk',
+      shade_percentage: Math.round(ratio * 100),
+      is_shaded_or_underground: ratio >= 0.60,
+    }
+  })
+
+  const shadePercentage = walkingDistanceMeters > 0
+    ? Math.round((shadedDistanceMeters / walkingDistanceMeters) * 100)
+    : 100
+  const roundedSunExposure = Math.round(sunExposureMinutes * 10) / 10
+  const roundedShadedDistance = Math.round(shadedDistanceMeters)
+
+  return {
+    ...route,
+    segments,
+    shadePercentage,
+    sunExposureMinutes: roundedSunExposure,
+    shadedDistanceMeters: roundedShadedDistance,
+    walkingDistanceMeters: Math.round(walkingDistanceMeters),
+    walkingDurationMinutes: Math.round(walkingDurationMinutes * 10) / 10,
+    comfortScore: Math.max(30, Math.min(100, Math.round(shadePercentage * 0.6 + 40 - roundedSunExposure * 1.5))),
+    shadeTimePeriod,
+    shadeMethod: 'google-walking-steps-demo',
+    routeAdvice: `${scenario.label}固定情境：依畫面中的 Google Maps 步行分段估算，步行遮蔭約 ${shadePercentage}%，直曬約 ${roundedSunExposure} 分鐘；公車與捷運車程未納入步行遮蔭率。`,
+  }
+}
 
 /**
  * Standard Google Polyline decoder.
@@ -53,6 +128,7 @@ export class RoutesService {
    * @param {number} params.destLng
    * @param {string} [params.destName]
    * @param {boolean} [params.prioritizeShade=true]
+   * @param {'morning'|'noon'|'evening'} [params.shadeTimePeriod='morning']
    * @param {string} [params.preference='fastest']
    * @param {boolean} [params.wheelchairAccessible=false]
    * @param {string} [params.departureTime='now']
@@ -64,6 +140,7 @@ export class RoutesService {
     destLng,
     destName = '目標活動場地',
     prioritizeShade = true,
+    shadeTimePeriod = 'morning',
     preference = 'fastest',
     wheelchairAccessible = false,
     departureTime = 'now',
@@ -75,6 +152,7 @@ export class RoutesService {
       destination_lng: destLng,
       destination_name: destName,
       prioritize_shade: prioritizeShade,
+      shade_time_period: shadeTimePeriod,
       preference: preference,
       wheelchair_accessible: wheelchairAccessible || preference === 'wheelchair',
       departure_time: departureTime,
@@ -107,6 +185,7 @@ export class RoutesService {
         routeAdvice: result.route_advice,
         sunExposureMinutes: result.sun_exposure_minutes ?? 0,
         shadedDistanceMeters: result.shaded_distance_meters ?? Math.round(result.total_distance_meters * (result.underground_or_shaded_percentage / 100)),
+        shadeTimePeriod: result.shade_time_period ?? shadeTimePeriod,
         accessibilityNote: result.accessibility_note,
         crowdNote: result.crowd_note,
         multimodal: result.multimodal || {
@@ -127,29 +206,26 @@ export class RoutesService {
       }
     } catch (err) {
       console.warn('Routes compute API failed, generating smart fallback route:', err)
+      const scenario = fallbackShadeScenarios[shadeTimePeriod] || fallbackShadeScenarios.morning
       const dist = Math.round(Math.hypot((originLat - destLat) * 111000, (originLng - destLng) * 100000)) || 2800
       const walkMin = Math.max(5, Math.round(dist / 70))
       const bikeMin = Math.max(3, Math.round(dist / 250))
       const taxiMin = Math.max(5, Math.round(dist / 420) + 3)
       const taxiFare = Math.max(85, Math.round(85 + (dist / 200) * 5))
-
       return {
         origin: '目前位置 (台北市市區)',
         destination: destName,
         preference: preference,
         totalDurationMinutes: 22,
         totalDistanceMeters: dist,
-        transitSummary: preference === 'more_bus'
-          ? '搭乘幹線公車直達，沿騎樓遮蔭步行 2 分鐘'
-          : preference === 'wheelchair'
-          ? '搭乘捷運無障礙車廂與直達電梯，全線無障礙友善'
-          : '搭乘捷運至周邊捷運站，沿地下街出口步行 3 分鐘',
-        shadePercentage: preference === 'more_shading' ? 95 : 88,
-        comfortScore: 92,
-        sunExposureMinutes: 2.5,
-        shadedDistanceMeters: Math.round(dist * 0.88),
-        accessibilityNote: preference === 'wheelchair' ? '♿ 全程無障礙電梯與平緩步道，推車或大件行李極佳' : '正常步行通道',
-        crowdNote: preference === 'less_crowded' ? '🟢 綠色舒適車廂，離峰乘車人潮稀疏' : '市區常規人流',
+        transitSummary: '大眾運輸與步行示意（實際路徑待確認）',
+        shadePercentage: scenario.shade,
+        comfortScore: Math.round(scenario.shade * 0.6 + 40 - scenario.exposure * 1.5),
+        sunExposureMinutes: scenario.exposure,
+        shadedDistanceMeters: scenario.distance,
+        shadeTimePeriod,
+        accessibilityNote: preference === 'wheelchair' ? '無障礙需求已記錄，實際電梯與坡道仍待 Google Maps 路徑確認' : '實際步行條件待確認',
+        crowdNote: preference === 'less_crowded' ? '避開人潮偏好已記錄，實際車廂人流待確認' : '即時人流待確認',
         multimodal: {
           walk_calories: Math.round(walkMin * 4.2),
           walk_duration_minutes: walkMin,
@@ -162,11 +238,11 @@ export class RoutesService {
           taxi_cost_twd: taxiFare,
           transit_duration_minutes: 22,
         },
-        routeAdvice: '捷運連通道與騎樓覆蓋率高，預估戶外直曬極短，避暑與通勤舒適度俱佳。',
+        routeAdvice: `${scenario.label}保守 fallback：以共 500 公尺步行示意估算遮蔭約 ${scenario.shade}%，預估戶外直曬 ${scenario.exposure} 分鐘；實際路徑待 Google Maps 確認。`,
         segments: [
-          { mode: 'WALK', instruction: '從目前位置步行至站點 (地下通道/騎樓)', duration_minutes: 4, distance_meters: 220, is_shaded_or_underground: true, is_accessible: true },
-          { mode: preference === 'more_bus' ? 'BUS' : 'SUBWAY', instruction: preference === 'more_bus' ? '搭乘市區幹線公車直達' : '搭乘捷運抵達目標站點 (強冷空調)', duration_minutes: 14, distance_meters: Math.max(300, dist - 400), is_shaded_or_underground: true, is_accessible: true },
-          { mode: 'WALK', instruction: `出站由騎樓/地下街直通 ${destName}`, duration_minutes: 4, distance_meters: 200, is_shaded_or_underground: true, is_accessible: true },
+          { mode: 'WALK', instruction: '從目前位置步行至鄰近大眾運輸站點', duration_minutes: 4, distance_meters: 250, is_shaded_or_underground: false, shade_percentage: scenario.shade, segment_kind: 'walk' },
+          { mode: preference === 'more_bus' ? 'BUS' : 'SUBWAY', instruction: preference === 'more_bus' ? '搭乘市區幹線公車前往目標區域' : '搭乘捷運抵達目標站點', duration_minutes: 14, distance_meters: Math.max(300, dist - 500), is_shaded_or_underground: true },
+          { mode: 'WALK', instruction: `由大眾運輸站點步行抵達 ${destName}`, duration_minutes: 4, distance_meters: 250, is_shaded_or_underground: false, shade_percentage: scenario.shade, segment_kind: 'walk' },
         ],
         path: [
           { lat: originLat, lng: originLng },

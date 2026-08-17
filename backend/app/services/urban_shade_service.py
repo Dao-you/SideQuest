@@ -15,7 +15,7 @@ from pydantic import BaseModel, Field
 
 from app.config import settings
 from app.logging_config import logger
-from app.models.places import RouteSegment
+from app.models.places import RouteSegment, ShadeTimePeriod
 from app.models.weather import (
     GoogleSolarBuildingInsights,
     GoogleSolarDataLayers,
@@ -130,6 +130,49 @@ TAIPEI_URBAN_AREAS: List[TaipeiUrbanAreaProfile] = [
         description="開闊戶外空間，遮蔭率較低（約 15-25%），白天烈日時段強烈建議攜帶陽傘並塗抹防曬。",
     ),
 ]
+
+
+class ShadeTimeScenario(BaseModel):
+    """Deterministic shade assumptions for hackathon acceptance testing."""
+
+    label: str
+    representative_time: str
+    covered_walk_ratio: float
+    bus_shelter_ratio: float
+    profile_adjustment: float
+    open_plaza_ratio: float
+    general_walk_ratio: float
+
+
+SHADE_TIME_SCENARIOS: Dict[ShadeTimePeriod, ShadeTimeScenario] = {
+    ShadeTimePeriod.MORNING: ShadeTimeScenario(
+        label="早上",
+        representative_time="09:00",
+        covered_walk_ratio=0.96,
+        bus_shelter_ratio=0.92,
+        profile_adjustment=0.08,
+        open_plaza_ratio=0.35,
+        general_walk_ratio=0.55,
+    ),
+    ShadeTimePeriod.NOON: ShadeTimeScenario(
+        label="正午",
+        representative_time="12:30",
+        covered_walk_ratio=0.90,
+        bus_shelter_ratio=0.88,
+        profile_adjustment=-0.10,
+        open_plaza_ratio=0.18,
+        general_walk_ratio=0.38,
+    ),
+    ShadeTimePeriod.EVENING: ShadeTimeScenario(
+        label="傍晚",
+        representative_time="17:30",
+        covered_walk_ratio=0.98,
+        bus_shelter_ratio=0.94,
+        profile_adjustment=0.15,
+        open_plaza_ratio=0.50,
+        general_walk_ratio=0.65,
+    ),
+}
 
 
 class GoogleSolarClient:
@@ -447,76 +490,74 @@ class UrbanShadeEngine:
         duration_minutes: int,
         segments: List[RouteSegment],
         prioritize_shade: bool = True,
-    ) -> Tuple[int, float, str, float]:
-        """Calculate physically grounded route shade %, sun exposure duration, and route advice."""
-        geometry = self.calculate_solar_geometry()
-        is_night = geometry["is_night"]
-
-        if is_night:
-            return (
-                100,
-                0.0,
-                f"全程約 {duration_minutes} 分鐘。當前為夜間涼爽時段，完全免受紫外線與艷陽直曬，動線暢通舒適。",
-                95.0,
-            )
-
+        shade_time_period: ShadeTimePeriod = ShadeTimePeriod.MORNING,
+    ) -> Tuple[int, float, str, float, int]:
+        """Calculate deterministic demo shade metrics for a selected time scenario."""
         profile = self.match_urban_profile(dest_name)
+        scenario = SHADE_TIME_SCENARIOS[shade_time_period]
 
         total_shaded_meters = 0
+        total_pedestrian_meters = 0
         total_sun_minutes = 0.0
 
         for seg in segments:
             seg_dist = seg.distance_meters
             seg_dur = seg.duration_minutes
 
-            if seg.mode in ["SUBWAY", "UNDERGROUND_WALK"]:
-                total_shaded_meters += seg_dist
+            if seg.mode == "SUBWAY":
+                # Shade percentage describes the parts users actually walk.
+                continue
             elif seg.mode == "BUS":
-                shaded_m = int(seg_dist * 0.9)
-                total_shaded_meters += shaded_m
-                total_sun_minutes += seg_dur * 0.1
-            else:  # WALK
-                if "地下街" in seg.instruction or "連通道" in seg.instruction:
-                    shaded_m = int(seg_dist * 0.95)
-                    sun_dur = seg_dur * 0.05
-                elif "騎樓" in seg.instruction or "林蔭" in seg.instruction or prioritize_shade:
-                    walk_shade_ratio = (profile.arcade_walkway_pct * 0.7 + profile.tree_canopy_pct * 0.3) / 100.0
-                    walk_shade_ratio = max(0.60, min(0.92, walk_shade_ratio))
-                    shaded_m = int(seg_dist * walk_shade_ratio)
-                    sun_dur = seg_dur * (1.0 - walk_shade_ratio)
+                # Treat ten percent of a bus segment as stop/waiting exposure.
+                total_sun_minutes += seg_dur * (1.0 - scenario.bus_shelter_ratio)
+                continue
+            else:  # WALK / UNDERGROUND_WALK
+                total_pedestrian_meters += seg_dist
+                if (
+                    seg.mode == "UNDERGROUND_WALK"
+                    or seg.is_shaded_or_underground
+                    or "地下街" in seg.instruction
+                    or "連通道" in seg.instruction
+                ):
+                    walk_shade_ratio = scenario.covered_walk_ratio
                 elif profile.is_open_plaza:
-                    shaded_m = int(seg_dist * 0.20)
-                    sun_dur = seg_dur * 0.80
+                    walk_shade_ratio = scenario.open_plaza_ratio
+                elif "騎樓" in seg.instruction or "林蔭" in seg.instruction:
+                    walk_shade_ratio = (profile.arcade_walkway_pct * 0.7 + profile.tree_canopy_pct * 0.3) / 100.0
+                    walk_shade_ratio += scenario.profile_adjustment
+                    walk_shade_ratio = max(0.20, min(0.95, walk_shade_ratio))
                 else:
-                    shaded_m = int(seg_dist * 0.45)
-                    sun_dur = seg_dur * 0.55
+                    walk_shade_ratio = scenario.general_walk_ratio
 
+                shaded_m = int(seg_dist * walk_shade_ratio)
+                sun_dur = seg_dur * (1.0 - walk_shade_ratio)
                 total_shaded_meters += shaded_m
                 total_sun_minutes += sun_dur
 
-        shade_pct = int(round((total_shaded_meters / max(1, distance_meters)) * 100))
-        shade_pct = max(15, min(98, shade_pct))
+        shade_pct = int(round((total_shaded_meters / max(1, total_pedestrian_meters)) * 100))
+        shade_pct = max(10, min(98, shade_pct))
         sun_exposure_min = round(total_sun_minutes, 1)
 
         comfort_score = min(100.0, max(30.0, (shade_pct * 0.6) + 40.0 - (sun_exposure_min * 1.5)))
+        scenario_prefix = f"{scenario.label} {scenario.representative_time} 驗收情境："
 
         if shade_pct >= 85:
             advice = (
-                f"全程約 {duration_minutes} 分鐘，遮蔭與地下覆蓋率高達 {shade_pct}%！"
+                f"{scenario_prefix}全程約 {duration_minutes} 分鐘，步行遮蔭與地下覆蓋率約 {shade_pct}%。"
                 f"路線充分利用台北捷運與地下連通道（預估戶外直曬僅 {sun_exposure_min} 分鐘），有效阻絕熱浪曝曬。"
             )
         elif shade_pct >= 65:
             advice = (
-                f"全程約 {duration_minutes} 分鐘，沿途遮蔭率約 {shade_pct}%（戶外直曬約 {sun_exposure_min} 分鐘）。"
+                f"{scenario_prefix}全程約 {duration_minutes} 分鐘，步行遮蔭率約 {shade_pct}%（戶外直曬約 {sun_exposure_min} 分鐘）。"
                 f"建議出站後行走兩側騎樓與林蔭步道，可大幅降低體感溫度。"
             )
         else:
             advice = (
-                f"全程約 {duration_minutes} 分鐘。因目的地周邊屬開闊廣場，遮蔽率約 {shade_pct}%（戶外曝曬約 {sun_exposure_min} 分鐘）。"
+                f"{scenario_prefix}全程約 {duration_minutes} 分鐘。步行遮蔽率約 {shade_pct}%（戶外曝曬約 {sun_exposure_min} 分鐘）。"
                 f"建議備妥遮陽傘、隨身水壺並於陰涼處稍作停留。"
             )
 
-        return (shade_pct, sun_exposure_min, advice, round(comfort_score, 1))
+        return (shade_pct, sun_exposure_min, advice, round(comfort_score, 1), total_shaded_meters)
 
 
 _urban_shade_engine_instance: Optional[UrbanShadeEngine] = None

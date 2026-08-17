@@ -2,6 +2,7 @@
 
 from typing import Any, Dict
 from app.agent.tools.base import BaseTool
+from app.models.places import ShadeTimePeriod
 from app.services.places_service import get_places_service
 
 
@@ -42,6 +43,12 @@ class RoutesTool(BaseTool):
                 "description": "是否優先推薦地下街與遮蔭路徑",
                 "default": True,
             },
+            "shade_time_period": {
+                "type": "string",
+                "enum": ["morning", "noon", "evening"],
+                "description": "驗收用固定遮蔭時段情境",
+                "default": "morning",
+            },
             "preference": {
                 "type": "string",
                 "enum": ["fastest", "wheelchair", "more_bus", "more_subway", "less_walking", "more_shading", "less_crowded", "mixed"],
@@ -65,6 +72,7 @@ class RoutesTool(BaseTool):
         destination_lng: float,
         destination_name: str = "目的地",
         prioritize_shade: bool = True,
+        shade_time_period: str = "morning",
         preference: str = "fastest",
         wheelchair_accessible: bool = False,
         **kwargs: Any,
@@ -78,6 +86,7 @@ class RoutesTool(BaseTool):
             dest_lng=destination_lng,
             dest_name=destination_name,
             prioritize_shade=prioritize_shade,
+            shade_time_period=ShadeTimePeriod(shade_time_period),
             preference=preference,
             wheelchair_accessible=wheelchair_accessible,
         )
@@ -91,6 +100,7 @@ class RoutesTool(BaseTool):
             "underground_or_shaded_percentage": route.underground_or_shaded_percentage,
             "comfort_score": route.comfort_score,
             "route_advice": route.route_advice,
+            "shade_time_period": route.shade_time_period.value,
             "accessibility_note": route.accessibility_note,
             "crowd_note": route.crowd_note,
             "multimodal": route.multimodal.model_dump() if route.multimodal else None,

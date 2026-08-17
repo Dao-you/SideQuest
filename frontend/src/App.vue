@@ -3,11 +3,11 @@ import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { Loader } from '@googlemaps/js-api-loader'
 import { Badge, Button, Chip, Input, Progress, Snackbar } from '@varlet/ui'
 import { createEventDataSource } from './data/eventDataSource'
-import { toEventPlace } from './data/eventPresentation'
+import { SHADE_TIME_SCENARIOS, toEventPlace } from './data/eventPresentation'
 import { createAgentService } from './services/agentService'
 import { weatherService } from './services/weatherService'
 import { crowdService } from './services/crowdService'
-import { routesService } from './services/routesService'
+import { applyShadeScenarioToGoogleRoute, routesService } from './services/routesService'
 import { userService } from './services/userService'
 
 const rawEnvMapsKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || 'AIzaSyBvHetpB7ilLcNSJXeecfVgaLQ7b3TGobY'
@@ -20,7 +20,7 @@ const map = ref(null)
 const userLocation = ref({ ...TAIPEI_CENTER })
 const hasUserLocation = ref(false)
 const locationState = ref('idle')
-const activeFilter = ref('為你推薦')
+const activeFilter = ref('推薦')
 const activePlaceId = ref('')
 const prompt = ref('')
 const isExploring = ref(false)
@@ -47,7 +47,10 @@ const weather = ref({
 })
 const weatherLoading = ref(false)
 
-// User & Persona State (PRD 7.1 Mock Login)
+// Deterministic shade scenarios for hackathon acceptance testing
+const shadeTimePeriod = ref('morning')
+
+// User & Persona State (PRD 7.1)
 const personas = ref([])
 const activePersona = ref({
   id: 'demo_weekend_explorer',
@@ -75,27 +78,27 @@ const feedbackMap = ref(new Map())
 const activeRoute = ref(null)
 const routeLoading = ref(false)
 const routePreference = ref('fastest') // 'fastest' | 'wheelchair' | 'more_bus' | 'more_subway' | 'less_walking' | 'more_shading' | 'less_crowded' | 'mixed'
-const routeDepartureTime = ref('出發時間 現在')
+const routeDepartureTime = ref('現在出發')
 const showDepartureDropdown = ref(false)
 const routeOriginSwapped = ref(false)
 const selectedModalTab = ref('transit') // 'overview' | 'youbike' | 'transit' | 'taxi'
 
 const routePreferencesList = [
-  { id: 'fastest', label: '經典', icon: '🟢', desc: '最快速抵達' },
+  { id: 'fastest', label: '最快抵達', icon: '●', desc: '最快速抵達' },
   { id: 'wheelchair', label: '無障礙', icon: '♿', desc: '電梯/推車/大件行李友善' },
-  { id: 'more_bus', label: '公車+', icon: '🚌', desc: '公車直達優先' },
-  { id: 'more_subway', label: '捷運+', icon: '🚇', desc: '捷運軌道優先' },
-  { id: 'less_walking', label: '少走點', icon: '🚶', desc: '少走路/少換乘' },
-  { id: 'more_shading', label: '避曬', icon: '🛡️', desc: '地下街與林蔭遮蔽' },
-  { id: 'less_crowded', label: '避人潮', icon: '👥', desc: '舒適離峰車廂' },
-  { id: 'mixed', label: '混合', icon: '🚲', desc: 'YouBike+捷運組合' },
+  { id: 'more_bus', label: '公車優先', icon: '公', desc: '公車直達優先' },
+  { id: 'more_subway', label: '捷運優先', icon: '捷', desc: '捷運軌道優先' },
+  { id: 'less_walking', label: '少走路', icon: '走', desc: '少走路/少換乘' },
+  { id: 'more_shading', label: '較少曝曬', icon: '蔭', desc: '地下街與林蔭遮蔽' },
+  { id: 'less_crowded', label: '避開人潮', icon: '人', desc: '舒適離峰車廂' },
+  { id: 'mixed', label: '混合交通', icon: '混', desc: 'YouBike+捷運組合' },
 ]
 
 const departureTimeOptions = [
-  '出發時間 現在',
-  '出發時間 10 分鐘後',
-  '出發時間 30 分鐘後',
-  '出發時間 1 小時後',
+  '現在出發',
+  '10 分鐘後出發',
+  '30 分鐘後出發',
+  '1 小時後出發',
 ]
 
 let currentPolyline = null
@@ -188,6 +191,7 @@ const feedbackTagsList = [
 ]
 
 const places = ref([])
+const eventRecords = ref([])
 const eventDataSource = createEventDataSource()
 const eventSourceLabel = eventDataSource.label
 const agentService = createAgentService()
@@ -201,10 +205,15 @@ const pkPlaces = computed(() =>
 )
 
 const filters = computed(() => {
-  const base = ['為你推薦', '室內避暑', '低人流', '免費入場']
+  const base = ['推薦', '室內', '低人流', '免費']
+  const tagLabelMap = {
+    室內避暑: '室內',
+    免費入場: '免費',
+  }
   if (quickTags.value.length > 0) {
     quickTags.value.forEach((tag) => {
-      if (!base.includes(tag.label)) base.push(tag.label)
+      const label = tagLabelMap[tag.label] || tag.label
+      if (!base.includes(label)) base.push(label)
     })
   }
   return base
@@ -227,6 +236,9 @@ const avatarInitials = computed(() => {
 
 const selectedPlace = computed(() => places.value.find((place) => place.id === activePlaceId.value) ?? places.value[0])
 const detailPlace = computed(() => places.value.find((place) => place.id === detailPlaceId.value) ?? null)
+const activeShadeScenario = computed(() =>
+  SHADE_TIME_SCENARIOS.find((scenario) => scenario.id === shadeTimePeriod.value) ?? SHADE_TIME_SCENARIOS[0]
+)
 
 const bookmarkedPlaces = computed(() =>
   places.value.filter((p) => favoritePlaceIds.value.has(p.id))
@@ -241,10 +253,10 @@ const visiblePlaces = computed(() => {
       .filter((place) => Number.isFinite(place.crowd))
       .sort((a, b) => a.crowd - b.crowd)
   }
-  if (activeFilter.value === '室內避暑') {
+  if (activeFilter.value === '室內') {
     return places.value.filter((place) => place.isIndoor)
   }
-  if (activeFilter.value === '免費入場') {
+  if (activeFilter.value === '免費') {
     return places.value.filter((place) => place.fee.includes('免費'))
   }
   // If filter matches a category
@@ -266,6 +278,15 @@ function crowdClass(score) {
   if (score < 35) return 'good'
   if (score < 65) return 'medium'
   return 'busy'
+}
+
+function routeStepContext(step) {
+  const mode = String(step?.mode || '').toUpperCase()
+  if (!['WALK', 'WALKING', 'UNDERGROUND_WALK'].includes(mode)) return '🚇 大眾運輸路段'
+  if (Number.isFinite(Number(step?.shade_percentage))) {
+    return `◒ ${activeShadeScenario.value.label}遮蔭情境 ${Number(step.shade_percentage)}%`
+  }
+  return step?.is_shaded_or_underground ? '🛡️ 遮蔭/地下通道' : '☀️ 戶外步行路段'
 }
 
 async function loadWeather() {
@@ -421,6 +442,26 @@ async function loadQuickPrompts() {
   }
 }
 
+function rebuildPlaces() {
+  places.value = eventRecords.value.map((record, index) =>
+    toEventPlace(record, index, shadeTimePeriod.value)
+  )
+}
+
+async function selectShadeTimePeriod(period) {
+  if (period === shadeTimePeriod.value || !SHADE_TIME_SCENARIOS.some((scenario) => scenario.id === period)) return
+
+  const shouldRefreshRoute = Boolean(activeRoute.value)
+  const routePlaceId = detailPlaceId.value || activePlaceId.value
+  shadeTimePeriod.value = period
+  rebuildPlaces()
+
+  if (shouldRefreshRoute) {
+    const place = places.value.find((candidate) => candidate.id === routePlaceId)
+    if (place?.position) await planRouteToPlace(place)
+  }
+}
+
 async function loadEvents() {
   eventsLoading.value = true
   eventsError.value = ''
@@ -430,15 +471,16 @@ async function loadEvents() {
       crowdService.getVenuesStatus(),
     ])
     const crowdByVenue = new Map(venueStatuses.map((venue) => [venue.venue_id, venue]))
-    places.value = records.map((record, index) => {
+    eventRecords.value = records.map((record) => {
       const venueStatus = crowdByVenue.get(record.venueId)
-      return toEventPlace({
+      return {
         ...record,
         crowdScore: venueStatus?.crowd_score,
         // The current backend venue feed comes from MockDataSeeder.
         crowdIsMock: Boolean(venueStatus),
-      }, index)
+      }
     })
+    rebuildPlaces()
     activePlaceId.value = places.value[0]?.id ?? ''
     if (map.value) {
       markers.forEach((m) => m.overlay?.setMap(null))
@@ -447,7 +489,7 @@ async function loadEvents() {
       syncMarkerSelection()
     }
   } catch (error) {
-    eventsError.value = '活動目錄暫時無法載入，請確認後端服務或網路連線。'
+    eventsError.value = '活動清單暫時無法載入，請稍後再試。'
     console.error(error)
   } finally {
     eventsLoading.value = false
@@ -521,7 +563,7 @@ function selectPlace(place) {
 async function openPlaceDetails(place) {
   resetRouteState()
   detailPlaceId.value = place.id
-  sheetExpanded.value = false
+  sheetExpanded.value = true
   sheetMinimized.value = false
   selectPlace(place)
   await nextTick()
@@ -531,6 +573,7 @@ async function openPlaceDetails(place) {
 async function closePlaceDetails() {
   resetRouteState()
   detailPlaceId.value = ''
+  sheetExpanded.value = false
   await nextTick()
   sheetElement.value?.scrollTo({ top: 0, behavior: 'smooth' })
 }
@@ -586,7 +629,7 @@ function formatZhTwStepInstruction(step, actualMode) {
     if (travelModeStr.includes('BICYCLE') || actualMode === window.google?.maps?.TravelMode?.BICYCLING) {
       return '沿自行車專用道／市區林蔭道路騎乘 YouBike 前進'
     }
-    return '依 Google Maps 路線前進'
+    return '依地圖路線前進'
   }
 
   // Comprehensive Google Directions English -> zh-TW dictionary replacement
@@ -819,7 +862,8 @@ async function planRouteToPlace(place) {
       destLat: destCoords.lat,
       destLng: destCoords.lng,
       destName: destName,
-      prioritizeShade: routePreference.value === 'more_shading' || true,
+      prioritizeShade: routePreference.value === 'more_shading',
+      shadeTimePeriod: shadeTimePeriod.value,
       preference: routePreference.value,
       wheelchairAccessible: routePreference.value === 'wheelchair',
       departureTime: routeDepartureTime.value,
@@ -839,7 +883,7 @@ async function planRouteToPlace(place) {
     if (!googleRoute && map.value && window.google?.maps) {
       clearMapRouteLayers()
       const strokeColor = preferenceColorMap[routePreference.value] || '#10b981'
-      
+
       // If backend gave real decoded polyline use it, otherwise generate realistic street-grid path
       const displayPath = (route.hasRealPath && route.path?.length > 3)
         ? route.path
@@ -865,15 +909,28 @@ async function planRouteToPlace(place) {
       fitRouteInVisibleMap(bounds)
     }
 
+    if (!googleRoute && !route.hasRealPath) {
+      clearMapRouteLayers()
+      activeRoute.value = {
+        ...route,
+        pathUnavailable: true,
+        routeAdvice: `${route.routeAdvice} 路徑細節暫時無法繪製，請開啟導航確認道路與班次。`,
+      }
+      Snackbar.warning(`${activeShadeScenario.value.label}遮蔭情境已產生，地圖路徑暫未繪製`)
+      return
+    }
+
+    const shadedGoogleRoute = googleRoute
+      ? applyShadeScenarioToGoogleRoute(googleRoute, shadeTimePeriod.value)
+      : null
     activeRoute.value = googleRoute
       ? {
           ...route,
-          ...googleRoute,
+          ...shadedGoogleRoute,
           preference: routePreference.value,
           multimodal: route.multimodal,
           accessibilityNote: route.accessibilityNote,
           crowdNote: route.crowdNote,
-          routeAdvice: `${googleRoute.transitSummary}。遮蔭與地下街比例為 SideQuest 估算值，實際行走請以 Google Maps 導航為準。`,
         }
       : route
 
@@ -943,7 +1000,7 @@ async function toggleHeatmap() {
         }))
       })
       heatmapIsMock.value = points.every((point) => point.data_source !== 'live')
-      Snackbar.success(heatmapIsMock.value ? '已開啟 MVP 模擬人潮圖層' : '已開啟人潮圖層')
+    Snackbar.success(heatmapIsMock.value ? '已顯示示意人流' : '已開啟人流圖層')
     } catch (err) {
       console.error('Heatmap load error:', err)
       heatmapVisible.value = false
@@ -1025,7 +1082,7 @@ function useQuickPrompt(value) {
 async function explore() {
   if (isExploring.value) return
   if (!prompt.value.trim()) {
-    Snackbar.warning('先告訴我你現在想怎麼感受台北')
+    Snackbar.warning('請先輸入想找的活動')
     return
   }
 
@@ -1087,7 +1144,7 @@ async function explore() {
       aiEvaluatedCount.value = result.evaluated_count
     }
 
-    activeFilter.value = '為你推薦'
+    activeFilter.value = '推薦'
 
     // If top recommendation has coordinates, highlight on map
     const topRec = aiRecommendations.value[0]?.event
@@ -1101,9 +1158,9 @@ async function explore() {
     await nextTick()
     document.querySelector('.agent-recommendations-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 
-    Snackbar.success(`Agent 已完成分析與多準則推薦`)
+    Snackbar.success('推薦已更新')
   } catch (error) {
-    aiError.value = 'Agent 暫時沒有回應，推薦卡仍可直接瀏覽。'
+    aiError.value = '推薦暫時無法更新，仍可直接瀏覽活動清單。'
     console.error(error)
   } finally {
     isExploring.value = false
@@ -1115,6 +1172,10 @@ function formatAgentEventDate(event) {
   const start = new Date(event.start_time)
   if (Number.isNaN(start.getTime())) return ''
   return start.toLocaleString('zh-TW', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+}
+
+function cleanUiLabel(label, fallback = '') {
+  return String(label || fallback).replace(/^[^\p{L}\p{N}]+/u, '').trim()
 }
 
 // PRD Section 6 Stage 10 Feedback
@@ -1557,13 +1618,13 @@ async function initMap() {
   mapState.value = 'loading'
   window.gm_authFailure = () => {
     mapState.value = 'error'
-    mapError.value = 'Google Maps 認證授權中，正在套用專案網域白名單…'
+    mapError.value = '地圖暫時無法顯示，活動清單仍可使用。'
   }
 
   const mapsApiKey = rawEnvMapsKey
   if (!mapsApiKey) {
     mapState.value = 'error'
-    mapError.value = '尚未設定 Google Maps API key (請設定 GCP 專案環境變數)'
+    mapError.value = '地圖暫時無法顯示，活動清單仍可使用。'
     return
   }
 
@@ -1597,9 +1658,7 @@ async function initMap() {
     mapState.value = 'ready'
   } catch (error) {
     mapState.value = 'error'
-    mapError.value = error?.message?.includes('RefererNotAllowedMapError')
-      ? '此網址尚未加入 API key 的允許來源'
-      : 'Google Maps 載入失敗，請檢查 API key 與 Maps JavaScript API 是否啟用'
+    mapError.value = '地圖暫時無法顯示，活動清單仍可使用。'
   }
 }
 
@@ -1622,26 +1681,26 @@ onMounted(async () => {
       <div ref="mapElement" class="google-map"></div>
       <div v-if="mapState === 'loading'" class="map-state map-loading">
         <div class="loader-orbit"></div>
-        <span>正在連線 Google Maps 與台北微氣候…</span>
+          <span>正在載入地圖…</span>
       </div>
       <div v-if="mapState === 'error'" class="map-state map-error">
         <span class="error-mark">!</span>
-        <strong>Google Maps 暫時無法載入</strong>
+         <strong>地圖暫時無法顯示</strong>
         <small>{{ mapError }}</small>
       </div>
 
       <!-- Topbar Header -->
       <header class="topbar">
-        <div class="brand-lockup">
-          <div class="brand-mark">SQ</div>
+        <div class="brand-lockup" aria-label="SideQuest 城市探索">
+          <img class="brand-mark" src="/brand/sidequest-mark.png" alt="SideQuest 圖形標誌" />
           <div>
             <div class="brand-name">sidequest<span>.</span></div>
-            <div class="brand-caption">城市裡的下一站 · AI Agent</div>
+            <div class="brand-caption">城市裡的下一站</div>
           </div>
         </div>
         <div class="topbar-actions">
           <button class="city-pill" @click="centerMap" aria-label="切換城市或置中">
-            <span class="status-dot"></span> Taipei City <span class="caret">⌄</span>
+            <span class="status-dot"></span> 台北市 <span class="caret">⌄</span>
           </button>
           <button
             type="button"
@@ -1664,7 +1723,7 @@ onMounted(async () => {
       </header>
 
       <!-- Live Microclimate & Solar Pill -->
-      <div class="map-context-pill" @click="loadWeather" title="點擊重新取得微氣候資料">
+       <div class="map-context-pill" @click="loadWeather" title="重新整理天氣與日照資料">
         <span class="context-icon">☀</span>
         <div>
           <strong>{{ weather.temperature }}°C</strong>
@@ -1676,7 +1735,7 @@ onMounted(async () => {
           <span>{{ weather.sunExposureLevel === 'HIGH' ? '高曝曬' : '中等日照' }}</span>
         </div>
         <div class="refresh-label" :class="{ spinning: weatherLoading }">
-          {{ weather.isMock ? '模擬環境' : '即時更新' }}
+           {{ weather.isMock ? '示意資料' : '即時資料' }}
         </div>
       </div>
 
@@ -1694,7 +1753,7 @@ onMounted(async () => {
         aria-label="切換人潮熱力圖圖層"
         @click="toggleHeatmap"
       >
-        🔥
+        ◌
       </button>
       <div class="map-control-stack">
         <button class="map-control" aria-label="放大地圖" @click="map?.setZoom((map?.getZoom() ?? 12) + 1)">＋</button>
@@ -1706,7 +1765,7 @@ onMounted(async () => {
         <div class="route-banner-icon">⌁</div>
         <div class="route-banner-info">
           <strong>{{ activeRoute.destination }}</strong>
-          <span>{{ activeRoute.transitSummary }} · SideQuest 遮蔭估算 {{ activeRoute.shadePercentage }}%</span>
+          <span>{{ activeRoute.transitSummary }} · {{ activeShadeScenario.label }}遮蔭情境 {{ activeRoute.shadePercentage }}%</span>
         </div>
         <button type="button" class="route-banner-close" aria-label="清除路線" @click="clearRoute">×</button>
       </div>
@@ -1714,7 +1773,7 @@ onMounted(async () => {
       <div class="map-legend">
         <span><b class="legend-dot legend-cool"></b>人流舒適 (&lt;35)</span>
         <span><b class="legend-dot legend-warm"></b>人潮熱門 (&gt;65)</span>
-        <span v-if="heatmapVisible && heatmapIsMock">MVP 模擬人流</span>
+         <span v-if="heatmapVisible && heatmapIsMock">示意資料</span>
       </div>
     </section>
 
@@ -1738,7 +1797,6 @@ onMounted(async () => {
           @pointercancel="endSheetDrag"
         >
           <span class="sheet-handle"></span>
-          <small>{{ sheetHandleLabel }}</small>
         </button>
         <button
           v-if="!sheetMinimized"
@@ -1753,7 +1811,7 @@ onMounted(async () => {
       <article v-if="detailPlace" class="place-detail-view">
         <header class="detail-header">
           <button type="button" class="detail-back" aria-label="返回活動列表" @click="closePlaceDetails">←</button>
-          <span>ACTIVITY DETAIL · {{ detailPlace.label }}</span>
+           <span>活動詳情</span>
           <button type="button" class="detail-close" aria-label="關閉詳細資料" @click="closePlaceDetails">×</button>
         </header>
 
@@ -1818,7 +1876,7 @@ onMounted(async () => {
                 class="route-time-btn"
                 @click="showDepartureDropdown = !showDepartureDropdown"
               >
-                <span>🕒</span>
+                 <span>◷</span>
                 <strong>{{ routeDepartureTime }}</strong>
                 <span class="chevron">⌄</span>
               </button>
@@ -1846,7 +1904,7 @@ onMounted(async () => {
                 <span class="od-dot origin-dot"></span>
                 <div class="od-text">
                   <small>起點</small>
-                  <strong>{{ routeOriginSwapped ? detailPlace.name : '當前位置 (台北市區 / 吳興街)' }}</strong>
+                   <strong>{{ routeOriginSwapped ? detailPlace.name : '目前位置（台北市區）' }}</strong>
                 </div>
               </div>
               <div class="od-connector"></div>
@@ -1854,7 +1912,7 @@ onMounted(async () => {
                 <span class="od-dot dest-dot"></span>
                 <div class="od-text">
                   <small>目的地</small>
-                  <strong>{{ routeOriginSwapped ? '當前位置 (台北市區)' : detailPlace.name }}</strong>
+                   <strong>{{ routeOriginSwapped ? '目前位置（台北市區）' : detailPlace.name }}</strong>
                 </div>
               </div>
             </div>
@@ -1926,7 +1984,7 @@ onMounted(async () => {
               </div>
               <div class="modal-metrics">
                 <strong>{{ activeRoute.totalDurationMinutes }} <small>分鐘</small></strong>
-                <span class="shade-pill">🛡️ {{ activeRoute.shadePercentage }}% 遮蔭</span>
+                <span class="shade-pill">◒ {{ activeRoute.shadePercentage }}% 步行遮蔭</span>
               </div>
             </div>
           </div>
@@ -1947,7 +2005,7 @@ onMounted(async () => {
               <span>📍 {{ activeRoute.multimodal?.bike_station || '周邊租賃站點' }} · 可借 5 輛 / 可還 12 位</span>
             </div>
             <p class="option-desc">
-              🌱 沿著林蔭單車專用道前行，預估燃燒 <strong>{{ activeRoute.multimodal?.bike_calories || 128 }}</strong> 大卡，享受微風與低碳生活。
+              沿著林蔭單車道前行，預估消耗 <strong>{{ activeRoute.multimodal?.bike_calories || 128 }}</strong> 大卡。
             </p>
           </div>
 
@@ -1956,14 +2014,16 @@ onMounted(async () => {
             <div class="route-card-header">
               <div>
                 <span class="route-tag">
+                  {{ activeShadeScenario.label }} ·
                   {{ routePreferencesList.find(p => p.id === routePreference)?.icon }}
                   {{ routePreferencesList.find(p => p.id === routePreference)?.label }}推薦
+                  {{ activeRoute.pathUnavailable ? '· 路徑待確認' : '' }}
                 </span>
                 <h3>{{ activeRoute.transitSummary }}</h3>
               </div>
               <div class="route-shade-badge">
                 <strong>{{ activeRoute.shadePercentage }}%</strong>
-                <small>遮蔭/地下率</small>
+                <small>步行遮蔭率</small>
               </div>
             </div>
 
@@ -1976,7 +2036,7 @@ onMounted(async () => {
                 👥 {{ activeRoute.crowdNote }}
               </span>
               <span v-if="activeRoute.sunExposureMinutes !== undefined" class="feat-badge sun-badge">
-                ☀️ 戶外直曬僅 {{ activeRoute.sunExposureMinutes }} 分鐘
+                ☀️ 預估直曬 {{ activeRoute.sunExposureMinutes }} 分鐘
               </span>
             </div>
 
@@ -1989,10 +2049,10 @@ onMounted(async () => {
                 <div class="step-info">
                   <div class="step-main">
                     <strong>{{ step.instruction }}</strong>
-                    <span v-if="step.is_shaded_or_underground" class="step-tag-shade">🛡️ 地下/遮蔭</span>
+                    <span v-if="step.is_shaded_or_underground && ['WALK', 'WALKING', 'UNDERGROUND_WALK'].includes(String(step.mode || '').toUpperCase())" class="step-tag-shade">{{ routeStepContext(step) }}</span>
                     <span v-if="step.is_accessible" class="step-tag-access">♿ 無障礙</span>
                   </div>
-                  <small>{{ step.duration_minutes }} 分鐘 · {{ step.distance_meters }}m {{ step.transit_line ? `· ${step.transit_line}` : '' }}</small>
+                  <small>{{ step.duration_minutes }} 分鐘 · {{ step.distance_meters }}m · {{ routeStepContext(step) }} {{ step.transit_line ? `· ${step.transit_line}` : '' }}</small>
                 </div>
               </div>
             </div>
@@ -2002,7 +2062,7 @@ onMounted(async () => {
           <div class="taxi-option-card">
             <div class="option-card-header">
               <div class="option-title-group">
-                <span class="badge-taxi">🚕 計程車 / 專車直達</span>
+                <span class="badge-taxi">計程車／專車直達</span>
                 <span class="option-price">約 NT$ {{ activeRoute.multimodal?.taxi_cost_twd || 195 }}</span>
               </div>
               <div class="option-duration">
@@ -2017,7 +2077,7 @@ onMounted(async () => {
                 rel="noopener noreferrer"
                 class="taxi-nav-btn"
               >
-                <span>🗺️</span> 在 Google Maps 開啟即時導航
+                <span>↗</span> 開啟導航
               </a>
             </div>
           </div>
@@ -2028,7 +2088,7 @@ onMounted(async () => {
             <span>♧</span>
             <small>目前人流</small>
             <strong :class="crowdClass(detailPlace.crowd)">
-              {{ crowdLabel(detailPlace.crowd) }}<template v-if="Number.isFinite(detailPlace.crowd)"> ({{ detailPlace.crowd }}){{ detailPlace.crowdIsMock ? ' · 模擬' : '' }}</template>
+              {{ crowdLabel(detailPlace.crowd) }}<template v-if="Number.isFinite(detailPlace.crowd)"> ({{ detailPlace.crowd }}){{ detailPlace.crowdIsMock ? '（示意）' : '' }}</template>
             </strong>
           </div>
           <div>
@@ -2055,7 +2115,7 @@ onMounted(async () => {
         </section>
 
         <section class="detail-section">
-          <div class="detail-section-heading"><span>02</span><h2>亮點與為什麼值得去</h2></div>
+          <div class="detail-section-heading"><span>02</span><h2>活動亮點</h2></div>
           <p>{{ detailPlace.description }}</p>
           <div v-if="detailPlace.admission" class="detail-tip">
             <span>↳</span>
@@ -2321,11 +2381,11 @@ onMounted(async () => {
       <div v-else class="sheet-discover-view">
         <div class="sheet-header">
           <div>
-            <p class="eyebrow"><span class="eyebrow-dot"></span> 你的城市 Agent · {{ activePersona.name }}</p>
+            <p class="eyebrow"><span class="eyebrow-dot"></span> 為你探索 · {{ activePersona.name }}</p>
             <h1>今天，想怎麼感受台北？</h1>
           </div>
           <div class="header-badges">
-            <Badge :value="eventSourceLabel" type="success" class="data-badge" />
+            <Badge value="活動資料" type="success" class="data-badge" />
           </div>
         </div>
 
@@ -2361,11 +2421,11 @@ onMounted(async () => {
             textarea
             :rows="1"
             :resize="false"
-            placeholder="告訴我你現在的感受，例如：想找室內展覽，不要太熱、人不要太多…"
+            placeholder="告訴我你想找什麼活動？"
             @keydown.enter.exact.prevent="explore"
           />
           <Button class="explore-button" type="primary" round :loading="isExploring" @click="explore">
-            <span v-if="!isExploring">探索 <span class="button-arrow">↗</span></span>
+            <span v-if="!isExploring">開始探索</span>
           </Button>
         </div>
 
@@ -2393,7 +2453,7 @@ onMounted(async () => {
             type="button"
             @click="useQuickPrompt(item)"
           >
-            {{ item }} <span>↗</span>
+            {{ item }}
           </button>
         </div>
 
@@ -2401,18 +2461,18 @@ onMounted(async () => {
         <div v-if="isExploring || aiReply || aiError || aiThoughtSteps.length" class="agent-response" :class="{ failed: aiError }">
           <div class="agent-response-heading">
             <span>✦</span> 推薦分析
-            <em v-if="isExploring">正在即時推理台北活動、微氣候與捷運連通…</em>
+            <em v-if="isExploring">正在整理活動、天氣與交通…</em>
           </div>
 
           <!-- Structured Understanding Criteria (PRD 7.3) -->
           <div v-if="aiParsedCriteria" class="parsed-criteria-row">
             <span class="criteria-badge">時段：{{ aiParsedCriteria.date_time_range || '今日' }}</span>
-            <span v-if="aiParsedCriteria.requested_date" class="criteria-badge criteria-date-badge">📅 已鎖定 {{ aiParsedCriteria.requested_date }}</span>
-            <span v-if="aiParsedCriteria.occasion" class="criteria-badge">💛 {{ aiParsedCriteria.occasion }}</span>
+            <span v-if="aiParsedCriteria.requested_date" class="criteria-badge criteria-date-badge">已鎖定 {{ aiParsedCriteria.requested_date }}</span>
+            <span v-if="aiParsedCriteria.occasion" class="criteria-badge">{{ aiParsedCriteria.occasion }}</span>
             <span v-if="aiParsedCriteria.target_district" class="criteria-badge">區域：{{ aiParsedCriteria.target_district }}</span>
-            <span v-if="aiParsedCriteria.avoid_crowd" class="criteria-badge">🍃 避開人潮優先</span>
-            <span v-if="aiParsedCriteria.prefer_indoor" class="criteria-badge">❄ 室內避暑</span>
-            <span v-if="aiParsedCriteria.is_free_only" class="criteria-badge">🎟 免費入場</span>
+            <span v-if="aiParsedCriteria.avoid_crowd" class="criteria-badge">避開人潮</span>
+            <span v-if="aiParsedCriteria.prefer_indoor" class="criteria-badge">室內</span>
+            <span v-if="aiParsedCriteria.is_free_only" class="criteria-badge">免費入場</span>
           </div>
 
           <!-- Collapsible Agent Thought Trace -->
@@ -2422,8 +2482,8 @@ onMounted(async () => {
               class="thought-toggle-btn"
               @click="showThoughtTrace = !showThoughtTrace"
             >
-              <span>🧠 Agent 決策推論軌跡 ({{ aiThoughtSteps.length }} 步)</span>
-              <small>{{ showThoughtTrace ? '收合 ▲' : '展開 ▼' }}</small>
+              <span>查看分析依據（{{ aiThoughtSteps.length }} 項）</span>
+              <small>{{ showThoughtTrace ? '收合' : '展開' }}</small>
             </button>
             <div v-if="showThoughtTrace" class="thought-steps-list">
               <div v-for="(step, idx) in aiThoughtSteps" :key="idx" class="thought-step-item">
@@ -2436,18 +2496,19 @@ onMounted(async () => {
             </div>
           </div>
 
-          <p v-if="aiReply" class="agent-markdown-text">{{ aiReply }}</p>
-          <p v-if="aiError" class="agent-error-text">{{ aiError }}</p>
+          <p v-if="isExploring && !aiReply" class="agent-markdown-text">正在整理適合你的活動…</p>
+          <p v-else-if="aiReply" class="agent-markdown-text">{{ aiReply }}</p>
+          <p v-if="aiError" class="agent-markdown-text">{{ aiError }}</p>
         </div>
 
-        <!-- PRD Section 6 Multi-criteria Recommendation Cards -->
-        <section v-if="aiRecommendations.length" class="agent-recommendations-section">
+        <!-- Recommendation Cards -->
+        <section v-if="aiRecommendations.length" class="agent-recommendations-section" aria-label="推薦方案">
           <div class="agent-rec-header">
             <div>
-              <span class="rec-kicker">AGENT PICKS · 智慧城市多準則決策</span>
-              <h2>為你量身打造的推薦方案</h2>
+              <span class="rec-kicker">推薦方案</span>
+              <h2>適合你的活動</h2>
             </div>
-            <strong v-if="aiEvaluatedCount">已即時評估 {{ aiEvaluatedCount }} 場活動與路徑</strong>
+            <strong>已比較 {{ aiEvaluatedCount || places.length }} 個活動</strong>
           </div>
 
           <div class="recommendations-grid">
@@ -2456,10 +2517,13 @@ onMounted(async () => {
               :key="`card-${card.event?.id || idx}`"
               class="rec-card"
               :class="`role-${card.card_role?.toLowerCase()}`"
+              role="button"
+              tabindex="0"
               @click="card.event?.id && openPlaceDetails(places.find(p => p.id === card.event.id) || card.event)"
+              @keydown.enter="card.event?.id && openPlaceDetails(places.find(p => p.id === card.event.id) || card.event)"
             >
               <div class="rec-card-top">
-                <span class="rec-role-badge">{{ card.card_role_label || '🎯 推薦選擇' }}</span>
+                <span class="rec-role-badge">{{ cleanUiLabel(card.card_role_label, '推薦選擇') }}</span>
                 <div class="rec-score-pill">
                   <span>綜合得分</span>
                   <strong>{{ Math.round(card.total_score || 90) }}</strong>
@@ -2467,7 +2531,7 @@ onMounted(async () => {
               </div>
 
               <h3 class="rec-card-title">{{ card.event?.title }}</h3>
-              <div v-if="formatAgentEventDate(card.event)" class="rec-card-date">📅 {{ formatAgentEventDate(card.event) }}</div>
+              <div v-if="formatAgentEventDate(card.event)" class="rec-card-date">{{ formatAgentEventDate(card.event) }}</div>
               <p class="rec-card-reason">{{ card.recommendation_reason }}</p>
 
               <!-- Dispersal Badges -->
@@ -2519,16 +2583,18 @@ onMounted(async () => {
                     type="button"
                     class="feedback-btn"
                     :class="{ active: feedbackMap.get(card.event?.id)?.isHelpful === true }"
-                    title="推薦精準，很喜歡"
+                    aria-label="這個推薦有幫助"
+                    title="這個推薦有幫助"
                     @click="openFeedbackModal(places.find(p => p.id === card.event?.id) || card.event, true)"
-                  >👍</button>
+                  >✓</button>
                   <button
                     type="button"
                     class="feedback-btn"
                     :class="{ active: feedbackMap.get(card.event?.id)?.isHelpful === false }"
-                    title="人潮偏多或提供建議"
+                    aria-label="這個推薦不適合"
+                    title="人潮偏多或距離較遠"
                     @click="openFeedbackModal(places.find(p => p.id === card.event?.id) || card.event, false)"
-                  >👎</button>
+                  >×</button>
                 </div>
               </div>
             </article>
@@ -2537,7 +2603,7 @@ onMounted(async () => {
           <div v-if="aiDispersalSummary" class="dispersal-insight-pill">
             <span class="insight-icon">↝</span>
             <div>
-              <strong>人流疏導洞察</strong>
+              <strong>人流建議</strong>
               <p>{{ aiDispersalSummary }}</p>
             </div>
           </div>
@@ -2547,18 +2613,18 @@ onMounted(async () => {
         <div class="recommendation-header">
           <div>
             <div class="section-kicker">
-              {{ selectedTab === 'saved' ? 'MY BOOKMARKS' : `${eventSourceLabel} · ${places.length} ACTIVITIES` }}
+               {{ selectedTab === 'saved' ? '已收藏' : `活動清單 · ${places.length} 項` }}
               <span class="pulse-dot"></span>
             </div>
-            <h2>{{ selectedTab === 'saved' ? '我的收藏活動' : '全部城市探索清單' }}</h2>
+             <h2>{{ selectedTab === 'saved' ? '已收藏的活動' : '探索活動' }}</h2>
           </div>
           <button
-            v-if="activeFilter !== '為你推薦'"
+            v-if="activeFilter !== '推薦'"
             type="button"
             class="view-all"
-            @click="activeFilter = '為你推薦'"
+            @click="activeFilter = '推薦'"
           >
-            重置篩選 <span>↺</span>
+             清除篩選
           </button>
         </div>
 
@@ -2578,11 +2644,11 @@ onMounted(async () => {
 
         <!-- Empty state for Bookmarks -->
         <div v-if="selectedTab === 'saved' && bookmarkedPlaces.length === 0" class="events-state">
-          你尚未收藏任何活動，點擊活動卡片中的「♡」即可加入個人清單！
+           還沒有收藏活動。點擊卡片右上角的收藏即可加入。
         </div>
 
         <!-- Events List -->
-        <div v-else-if="eventsLoading" class="events-state">正在同步台北活動與即時人流…</div>
+        <div v-else-if="eventsLoading" class="events-state">正在載入活動…</div>
         <div v-else-if="eventsError" class="events-state events-state-error">{{ eventsError }}</div>
         <div v-else class="place-list">
           <article
@@ -2590,13 +2656,16 @@ onMounted(async () => {
             :key="place.id"
             class="place-card"
             :class="{ selected: activePlaceId === place.id }"
+            role="button"
+            tabindex="0"
             @click="openPlaceDetails(place)"
+            @keydown.enter="openPlaceDetails(place)"
           >
-            <div class="place-number">0{{ index + 1 }}</div>
+             <div class="place-number">{{ String(index + 1).padStart(2, '0') }}</div>
             <div class="place-main">
               <div class="place-topline">
                 <span class="place-category">{{ place.category }}</span>
-                <span class="place-distance">{{ place.distanceShort }} <span>↗</span></span>
+                 <span class="place-distance">{{ place.distanceShort }}</span>
               </div>
               <h3>{{ place.name }}</h3>
               <div class="place-meta">{{ place.dateRange || '當期活動' }} <span>·</span> {{ place.fee }}</div>
@@ -2638,7 +2707,7 @@ onMounted(async () => {
               type="button"
               class="bookmark-card-btn"
               :class="{ active: favoritePlaceIds.has(place.id) }"
-              title="收藏活動"
+               :aria-label="favoritePlaceIds.has(place.id) ? '取消收藏' : '收藏活動'"
               @click.stop="toggleBookmark(place)"
             >
               {{ favoritePlaceIds.has(place.id) ? '♥' : '♡' }}
@@ -2646,6 +2715,29 @@ onMounted(async () => {
           </article>
         </div>
       </div>
+
+      <section v-if="!sheetMinimized" class="shade-scenario-panel" aria-labelledby="shade-scenario-title">
+        <div class="shade-scenario-copy">
+          <span class="shade-scenario-icon" aria-hidden="true">◒</span>
+          <div>
+             <strong id="shade-scenario-title">日照情境</strong>
+             <small>以 {{ activeShadeScenario.time }} 計算</small>
+          </div>
+        </div>
+        <div class="shade-scenario-switch" role="group" aria-label="選擇遮蔭估算時段">
+          <button
+            v-for="scenario in SHADE_TIME_SCENARIOS"
+            :key="scenario.id"
+            type="button"
+            :class="{ active: shadeTimePeriod === scenario.id }"
+            :aria-pressed="shadeTimePeriod === scenario.id"
+            @click="selectShadeTimePeriod(scenario.id)"
+          >
+            <strong>{{ scenario.label }}</strong>
+            <small>{{ scenario.time }}</small>
+          </button>
+        </div>
+      </section>
     </section>
 
     <!-- Floating PK Bottom Bar (Step 8) -->
@@ -2912,20 +3004,22 @@ onMounted(async () => {
       <div class="persona-modal">
         <header class="persona-modal-header">
           <div>
-            <span>IDENTITY & DEMO LOGIN · PRD 7.1</span>
-            <h2>模擬登入 / 切換 Demo 角色</h2>
+            <span>示範帳號</span>
+            <h2>切換使用者</h2>
           </div>
           <button type="button" class="modal-close-btn" @click="showPersonaModal = false">×</button>
         </header>
-
-        <p class="persona-intro">點選下方 4 大預設 Demo 測試角色即可快速模擬登入，立即體驗個人化活動推薦、專屬收藏清單、偏好人流權重與 Google 日曆連動：</p>
+        <p class="persona-intro">選擇一個示範帳號，套用它的偏好與收藏清單。</p>
         <div class="personas-grid">
           <div
             v-for="p in personas"
             :key="p.id"
             class="persona-card"
             :class="{ active: activePersona.id === p.id }"
+            role="button"
+            tabindex="0"
             @click="switchPersona(p)"
+            @keydown.enter="switchPersona(p)"
           >
             <div class="persona-avatar">{{ p.name.slice(0, 2) }}</div>
             <div class="persona-details">
@@ -2933,7 +3027,7 @@ onMounted(async () => {
               <div class="persona-tags">
                 <span v-for="t in p.interest_tags" :key="t">{{ t }}</span>
               </div>
-              <small>{{ p.prefer_indoor ? '❄ 偏好室內' : '☀ 接受戶外' }} · {{ p.avoid_crowd ? '🍃 避開人潮' : '👥 喜愛熱鬧' }} · 預算上限 NT${{ p.budget_twd_cap }}</small>
+              <small>{{ p.prefer_indoor ? '偏好室內' : '可接受戶外' }} · {{ p.avoid_crowd ? '避開人潮' : '喜愛熱鬧' }} · 預算上限 NT${{ p.budget_twd_cap }}</small>
             </div>
           </div>
         </div>

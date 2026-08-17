@@ -1,7 +1,7 @@
 """Places Details and Route Comfort Service with Interface."""
 
 from typing import Optional
-from app.models.places import PlaceDetails, RouteComfort
+from app.models.places import PlaceDetails, RouteComfort, ShadeTimePeriod
 from app.services.interfaces import PlacesServiceInterface
 from app.services.maps_service import MapsService, get_maps_service
 
@@ -29,6 +29,7 @@ class PlacesService(PlacesServiceInterface):
         dest_lng: float,
         dest_name: str = "目的地",
         prioritize_shade: bool = True,
+        shade_time_period: ShadeTimePeriod = ShadeTimePeriod.MORNING,
         preference: str = "fastest",
         wheelchair_accessible: bool = False,
         departure_time: Optional[str] = None,
@@ -41,6 +42,7 @@ class PlacesService(PlacesServiceInterface):
             dest_lng=dest_lng,
             dest_name=dest_name,
             prioritize_shade=prioritize_shade,
+            shade_time_period=shade_time_period,
             preference=preference,
             wheelchair_accessible=wheelchair_accessible,
             departure_time=departure_time,
