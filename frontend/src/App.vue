@@ -382,8 +382,8 @@ async function renderGoogleDirections(origin, destination) {
     travelMode: 'TRANSIT',
     departureTime: new Date(),
     computeAlternativeRoutes: false,
-    languageCode: 'zh-TW',
-    regionCode: 'TW',
+    language: 'zh-TW',
+    region: 'TW',
     units: 'METRIC',
     fields: ['path', 'legs', 'localizedValues'],
   })
