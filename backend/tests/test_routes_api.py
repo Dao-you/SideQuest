@@ -59,7 +59,7 @@ async def test_compute_routes_supports_three_deterministic_shade_scenarios():
         assert results["noon"]["underground_or_shaded_percentage"] < results["morning"]["underground_or_shaded_percentage"]
         assert results["morning"]["underground_or_shaded_percentage"] < results["evening"]["underground_or_shaded_percentage"]
         assert results["noon"]["sun_exposure_minutes"] > results["morning"]["sun_exposure_minutes"]
-        assert results["noon"]["underground_or_shaded_percentage"] < 75
+        assert [results[period]["underground_or_shaded_percentage"] for period in ("morning", "noon", "evening")] == [55, 38, 65]
         assert results["noon"]["segments"][0]["is_shaded_or_underground"] is False
         assert "地下" not in results["noon"]["segments"][0]["instruction"]
         assert "驗收情境" in results["evening"]["route_advice"]

@@ -256,20 +256,18 @@ class MapsService:
 
         # Realistic Transit & Shaded Path Calculation Model
         shade_engine = get_urban_shade_engine()
-        profile = shade_engine.match_urban_profile(dest_name)
         distance_meters = self._haversine_distance_meters(origin_lat, origin_lng, dest_lat, dest_lng)
 
         if distance_meters <= 800:
             walk_min = max(3, int(distance_meters / 75))
             transit_summary = f"步行約 {walk_min} 分鐘 ({distance_meters} 公尺)"
-            walk_inst = f"沿騎樓與人行林蔭步行至 {dest_name}" if prioritize_shade else f"步行至 {dest_name}"
             segments = [
                 RouteSegment(
                     mode="WALK",
-                    instruction=walk_inst,
+                    instruction=f"步行至 {dest_name}",
                     duration_minutes=walk_min,
                     distance_meters=distance_meters,
-                    is_shaded_or_underground=profile.arcade_walkway_pct >= 70 or profile.tree_canopy_pct >= 60,
+                    is_shaded_or_underground=False,
                 )
             ]
             total_duration = walk_min
@@ -279,7 +277,10 @@ class MapsService:
             walk_from_station_min = 3
             total_duration = walk_to_station_min + mrt_ride_min + walk_from_station_min
 
-            is_underground_hub = profile.underground_coverage_pct >= 80 or profile.is_indoor_complex
+            is_underground_hub = any(
+                keyword in dest_name
+                for keyword in ("地下街", "台北車站", "台北轉運站", "CityLink", "南港車站")
+            )
             transit_summary = f"搭乘台北捷運約 {total_duration} 分鐘 (含地下街/遮蔭步道)"
 
             segments = [
@@ -306,7 +307,7 @@ class MapsService:
                     ),
                     duration_minutes=walk_from_station_min,
                     distance_meters=200,
-                    is_shaded_or_underground=is_underground_hub or profile.arcade_walkway_pct >= 70,
+                    is_shaded_or_underground=is_underground_hub,
                 ),
             ]
 

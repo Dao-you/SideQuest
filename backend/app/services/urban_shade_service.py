@@ -522,7 +522,7 @@ class UrbanShadeEngine:
                     walk_shade_ratio = scenario.covered_walk_ratio
                 elif profile.is_open_plaza:
                     walk_shade_ratio = scenario.open_plaza_ratio
-                elif "騎樓" in seg.instruction or "林蔭" in seg.instruction or prioritize_shade:
+                elif "騎樓" in seg.instruction or "林蔭" in seg.instruction:
                     walk_shade_ratio = (profile.arcade_walkway_pct * 0.7 + profile.tree_canopy_pct * 0.3) / 100.0
                     walk_shade_ratio += scenario.profile_adjustment
                     walk_shade_ratio = max(0.20, min(0.95, walk_shade_ratio))
