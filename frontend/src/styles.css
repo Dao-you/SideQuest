@@ -324,7 +324,10 @@ button { cursor: pointer; }
 }
 
 @media (max-width: 620px) {
-  .eyebrow, .section-kicker { font-size: 10px; }
+  .eyebrow { font-size: 12px; line-height: 1.4; letter-spacing: .04em; }
+  .section-kicker { font-size: 11px; letter-spacing: .1em; }
+  .rec-kicker { font-size: 10px; letter-spacing: .08em; }
+  .data-badge { font-size: 10px; }
   .events-state { font-size: 12px; }
   .topbar { padding: 19px 18px; }
   .brand-mark { width: 34px; height: 34px; border-radius: 11px; font-size: 10px; }
