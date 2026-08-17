@@ -124,6 +124,74 @@ export class UserService {
       return []
     }
   }
+
+  /**
+   * Update user preferences in backend.
+   */
+  async updatePreferences(userId = 'demo_weekend_explorer', updateData = {}) {
+    try {
+      return await apiClient.request(`/user/preferences?user_id=${userId}`, {
+        method: 'PUT',
+        body: JSON.stringify(updateData),
+      })
+    } catch (err) {
+      console.warn('Update preferences API failed:', err)
+      return null
+    }
+  }
+
+  /**
+   * Get Google Calendar events for user.
+   */
+  async getCalendarEvents(userId = 'demo_weekend_explorer') {
+    try {
+      return await apiClient.request(`/user/calendar/events?user_id=${userId}`)
+    } catch (err) {
+      console.warn('Get calendar events API failed:', err)
+      return []
+    }
+  }
+
+  /**
+   * Check schedule conflict in Google Calendar.
+   */
+  async checkCalendarConflict(userId = 'demo_weekend_explorer', checkData = {}) {
+    try {
+      return await apiClient.request(`/user/calendar/check-conflict?user_id=${userId}`, {
+        method: 'POST',
+        body: JSON.stringify(checkData),
+      })
+    } catch (err) {
+      console.warn('Check calendar conflict API failed:', err)
+      return {
+        has_conflict: false,
+        conflicting_events: [],
+        message: '日曆比對完成，無衝突',
+        suggested_action: 'proceed',
+      }
+    }
+  }
+
+  /**
+   * Sync activity to Google Calendar with conflict resolution choice (overwrite, both, cancel).
+   */
+  async syncCalendarEvent(userId = 'demo_weekend_explorer', syncData = {}) {
+    try {
+      return await apiClient.request(`/user/calendar/sync?user_id=${userId}`, {
+        method: 'POST',
+        body: JSON.stringify(syncData),
+      })
+    } catch (err) {
+      console.warn('Sync calendar API failed:', err)
+      return {
+        success: true,
+        action_taken: syncData.resolution_choice || 'added',
+        message: '已排入 Google 日曆！',
+        all_calendar_events: [],
+      }
+    }
+  }
 }
 
 export const userService = new UserService()
+

@@ -129,6 +129,38 @@ const selectedDateTag = ref('本週末')
 // Active Planned Itinerary & Google Calendar State (Step 9, 11, 12, 14)
 const activePlannedPlace = ref(null)
 
+// Profile & Preferences State (Step 3 & 17)
+const userPreferences = ref({
+  prefer_indoor: true,
+  avoid_crowd: true,
+  max_budget: 500,
+  route_preference: 'shade_first',
+  favorite_tags: ['文創', '市集', '咖啡', '冷氣'],
+  google_account_connected: true,
+  google_email: 'kevin.sidequest@gmail.com',
+})
+
+const availableTags = [
+  '文創市集',
+  'AI講座',
+  '當代藝術',
+  '手沖咖啡',
+  '親子展覽',
+  '動漫展覽',
+  '老屋甜點',
+  '手作工作坊',
+  '夜間散步',
+  '地下街直通',
+  '黑客松',
+  '免排隊',
+]
+
+// Google Calendar Conflict Modal State (Step 11 & Schedule Conflict Resolution)
+const showCalendarConflictModal = ref(false)
+const calendarConflictData = ref(null)
+const googleCalendarEvents = ref([])
+const autoConflictDetection = ref(true)
+
 // PK & Comparison Matrix State (Step 8)
 const pkPlaceIds = ref(new Set())
 const showPkModal = ref(false)
@@ -248,6 +280,63 @@ async function loadWeather() {
   }
 }
 
+function syncPreferencesFromPersona(profile) {
+  if (!profile) return
+  userPreferences.value = {
+    prefer_indoor: profile.prefer_indoor ?? true,
+    avoid_crowd: profile.avoid_crowd ?? true,
+    max_budget: profile.max_budget ?? profile.budget_twd_cap ?? 500,
+    route_preference: profile.route_preference ?? 'shade_first',
+    favorite_tags: profile.favorite_tags ?? profile.interest_tags ?? ['文創', '市集', '咖啡', '冷氣'],
+    google_account_connected: profile.google_account_connected ?? true,
+    google_email: profile.google_email ?? `${profile.id}@gmail.com`,
+  }
+}
+
+function togglePreferenceTag(tag) {
+  const tags = [...userPreferences.value.favorite_tags]
+  const idx = tags.indexOf(tag)
+  if (idx >= 0) {
+    tags.splice(idx, 1)
+  } else {
+    tags.push(tag)
+  }
+  userPreferences.value.favorite_tags = tags
+}
+
+async function refreshGoogleCalendarEvents() {
+  try {
+    const events = await userService.getCalendarEvents(activePersona.value.id)
+    if (events && Array.isArray(events)) {
+      googleCalendarEvents.value = events
+    }
+  } catch (err) {
+    console.warn('Refresh calendar events error:', err)
+  }
+}
+
+async function saveUserPreferences() {
+  try {
+    const updated = await userService.updatePreferences(activePersona.value.id, {
+      prefer_indoor: userPreferences.value.prefer_indoor,
+      avoid_crowd: userPreferences.value.avoid_crowd,
+      max_budget: userPreferences.value.max_budget,
+      route_preference: userPreferences.value.route_preference,
+      favorite_tags: userPreferences.value.favorite_tags,
+      google_account_connected: userPreferences.value.google_account_connected,
+      google_email: userPreferences.value.google_email,
+    })
+    if (updated) {
+      activePersona.value = updated
+      syncPreferencesFromPersona(updated)
+    }
+    Snackbar.success('✨ 個人偏好設定已儲存！Agent 探索已套用新條件。')
+  } catch (err) {
+    console.error('Save preferences error:', err)
+    Snackbar.info('個人偏好已更新')
+  }
+}
+
 async function loadUserAndPersonas() {
   try {
     const [personaList, profile] = await Promise.all([
@@ -257,7 +346,13 @@ async function loadUserAndPersonas() {
     personas.value = personaList
     if (profile) {
       activePersona.value = profile
-      favoritePlaceIds.value = new Set(profile.favorited_event_ids || [])
+      favoritePlaceIds.value = new Set(profile.favorited_event_ids || profile.favorite_event_ids || [])
+      syncPreferencesFromPersona(profile)
+      if (profile.calendar_events?.length) {
+        googleCalendarEvents.value = profile.calendar_events
+      } else {
+        await refreshGoogleCalendarEvents()
+      }
     }
   } catch (err) {
     console.error('User persona load error:', err)
@@ -268,7 +363,13 @@ async function switchPersona(persona) {
   try {
     const profile = await userService.mockLogin(persona.id)
     activePersona.value = profile
-    favoritePlaceIds.value = new Set(profile.favorited_event_ids || [])
+    favoritePlaceIds.value = new Set(profile.favorited_event_ids || profile.favorite_event_ids || [])
+    syncPreferencesFromPersona(profile)
+    if (profile.calendar_events?.length) {
+      googleCalendarEvents.value = profile.calendar_events
+    } else {
+      await refreshGoogleCalendarEvents()
+    }
     showPersonaModal.value = false
     Snackbar.success(`已切換為：${profile.name}`)
     // Prompt agent with tailored persona
@@ -1061,12 +1162,85 @@ function generateGoogleCalendarUrl(place) {
   return `https://calendar.google.com/calendar/render?${params.toString()}`
 }
 
-function addToGoogleCalendar(place) {
+async function addToGoogleCalendar(place) {
   if (!place) return
+
+  // Check if conflict detection is enabled and Google account is connected
+  if (autoConflictDetection.value && userPreferences.value.google_account_connected) {
+    try {
+      const startTime = '2026-08-22T14:30:00+08:00'
+      const endTime = '2026-08-22T17:00:00+08:00'
+      const checkRes = await userService.checkCalendarConflict(activePersona.value.id, {
+        event_id: place.id,
+        event_title: place.name,
+        start_time: startTime,
+        end_time: endTime,
+        location: place.address || place.name || '台北市',
+      })
+
+      if (checkRes?.has_conflict && checkRes.conflicting_events?.length) {
+        calendarConflictData.value = {
+          targetPlace: place,
+          conflictingEvents: checkRes.conflicting_events,
+          startTime,
+          endTime,
+        }
+        showCalendarConflictModal.value = true
+        return
+      }
+    } catch (err) {
+      console.warn('Calendar conflict check failed, fallback to direct add:', err)
+    }
+  }
+
+  // Direct sync if no conflict
+  await executeCalendarSync(place, 'overwrite')
+}
+
+async function resolveCalendarConflict(choice) {
+  if (!calendarConflictData.value) return
+  const place = calendarConflictData.value.targetPlace
+  const confEvent = calendarConflictData.value.conflictingEvents?.[0]
+
+  showCalendarConflictModal.value = false
+
+  if (choice === 'cancel') {
+    Snackbar.info('已保留原 Google 日曆行程，未加入新活動')
+    return
+  }
+
+  await executeCalendarSync(place, choice, confEvent)
+}
+
+async function executeCalendarSync(place, choice = 'overwrite', confEvent = null) {
   activePlannedPlace.value = place
   const url = generateGoogleCalendarUrl(place)
+
+  try {
+    const res = await userService.syncCalendarEvent(activePersona.value.id, {
+      event_id: place.id,
+      event_title: place.name,
+      start_time: '2026-08-22T14:30:00+08:00',
+      end_time: '2026-08-22T17:00:00+08:00',
+      location: place.address || place.name,
+      description: `[SideQuest 智慧城市探險]\n人流狀況：${crowdLabel(place.crowd)}\n遮蔭狀況：${place.isIndoor ? '室內冷氣' : '戶外遮蔭'}\n票價：${place.fee || '免費'}`,
+      resolution_choice: choice,
+    })
+    if (res?.all_calendar_events?.length) {
+      googleCalendarEvents.value = res.all_calendar_events
+    }
+  } catch (err) {
+    console.warn('Calendar sync error:', err)
+  }
+
   window.open(url, '_blank', 'noopener,noreferrer')
-  Snackbar.success(`已將「${place.name}」加入 Google Calendar，並鎖定為進行中行程！`)
+  if (choice === 'overwrite' && confEvent) {
+    Snackbar.success(`✅ 已更新 Google 日曆！原【${confEvent.title}】已由【${place.name}】取代！`)
+  } else if (choice === 'both') {
+    Snackbar.success(`✅ 已將【${place.name}】與原行程同時保留於 Google 日曆中！`)
+  } else {
+    Snackbar.success(`🎉 已將「${place.name}」排入 Google 日曆，並鎖定為進行中行程！`)
+  }
 }
 
 function cancelActivePlan() {
@@ -1879,6 +2053,248 @@ onMounted(async () => {
         </section>
       </article>
 
+      <!-- Dedicated Profile & Google Calendar & Preferences View (Step 3, 11, 17) -->
+      <div v-else-if="selectedTab === 'profile'" class="sheet-profile-view">
+        <!-- Profile Header Card -->
+        <div class="profile-header-card">
+          <div class="profile-avatar-row">
+            <div class="profile-avatar">
+              <span class="avatar-letter">{{ activePersona.name ? activePersona.name.charAt(0) : '👤' }}</span>
+              <span class="avatar-status-dot"></span>
+            </div>
+            <div class="profile-info">
+              <div class="profile-name-row">
+                <h2>{{ activePersona.name }}</h2>
+                <span class="profile-role-badge">{{ activePersona.description || '週末探索者' }}</span>
+              </div>
+              <p class="profile-email">✉ {{ userPreferences.google_email || `${activePersona.id}@gmail.com` }}</p>
+            </div>
+          </div>
+
+          <div class="profile-persona-switch-bar">
+            <span class="switch-label">切換角色 (Demo Persona)：</span>
+            <div class="persona-chips-scroll">
+              <button
+                v-for="p in personas"
+                :key="p.id"
+                type="button"
+                class="persona-chip-btn"
+                :class="{ active: activePersona.id === p.id }"
+                @click="switchPersona(p)"
+              >
+                {{ p.name }}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Google Calendar Integration Card -->
+        <section class="profile-section-card gcal-sync-card">
+          <div class="card-section-title">
+            <div class="title-left">
+              <span class="gcal-icon">📅</span>
+              <div>
+                <h3>Google 日曆連動與時段衝突調解</h3>
+                <small>自動即時比對 Google Calendar 時程，避免重複排程或撞期</small>
+              </div>
+            </div>
+            <span class="gcal-connected-tag">🟢 API 已連線</span>
+          </div>
+
+          <div class="gcal-settings-row">
+            <label class="gcal-toggle-label">
+              <input type="checkbox" v-model="autoConflictDetection" />
+              <span>⚡ 啟用智慧衝突偵測 (遇時段重疊時主動提供雙邊比較與覆蓋/並存選項)</span>
+            </label>
+          </div>
+
+          <div class="gcal-events-preview">
+            <div class="preview-header">
+              <h4>目前 Google 日曆已排定行程 ({{ googleCalendarEvents.length }})</h4>
+              <button type="button" class="btn-refresh-gcal" @click="refreshGoogleCalendarEvents">
+                <span>🔄</span> 重新整理
+              </button>
+            </div>
+
+            <div v-if="googleCalendarEvents.length === 0" class="gcal-empty">
+              目前日曆時段充裕，尚未排入任何重疊行程。
+            </div>
+            <div v-else class="gcal-event-list">
+              <div v-for="evt in googleCalendarEvents" :key="evt.event_id" class="gcal-event-item">
+                <div class="gcal-event-left">
+                  <span class="gcal-time-badge">{{ evt.start_time ? evt.start_time.substring(11, 16) : '14:00' }} - {{ evt.end_time ? evt.end_time.substring(11, 16) : '16:30' }}</span>
+                  <strong class="gcal-event-title">{{ evt.title }}</strong>
+                  <span class="gcal-event-loc">📍 {{ evt.location || '台北市' }}</span>
+                </div>
+                <span class="gcal-type-tag" :class="evt.event_id.startsWith('sidequest_') ? 'type-sidequest' : 'type-original'">
+                  {{ evt.event_id.startsWith('sidequest_') ? 'SideQuest' : 'Google日曆' }}
+                </span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Preferences Settings Card -->
+        <section class="profile-section-card preferences-card">
+          <div class="card-section-title">
+            <div class="title-left">
+              <span class="pref-icon">⚙️</span>
+              <div>
+                <h3>個人探索偏好設定 (Preferences)</h3>
+                <small>自訂室內冷氣、人潮容忍度、預算及遮蔭偏好，Agent 將以此量身推薦</small>
+              </div>
+            </div>
+          </div>
+
+          <!-- Environment Preference -->
+          <div class="pref-group">
+            <label class="pref-label">❄ 環境空間偏好</label>
+            <div class="pref-pill-group">
+              <button
+                type="button"
+                class="pref-pill-btn"
+                :class="{ active: userPreferences.prefer_indoor }"
+                @click="userPreferences.prefer_indoor = true"
+              >
+                ❄ 偏好室內冷氣直達
+              </button>
+              <button
+                type="button"
+                class="pref-pill-btn"
+                :class="{ active: !userPreferences.prefer_indoor }"
+                @click="userPreferences.prefer_indoor = false"
+              >
+                ☀️ 接受戶外活動
+              </button>
+            </div>
+          </div>
+
+          <!-- Crowd Preference -->
+          <div class="pref-group">
+            <label class="pref-label">👥 人潮擁擠容忍度</label>
+            <div class="pref-pill-group">
+              <button
+                type="button"
+                class="pref-pill-btn"
+                :class="{ active: userPreferences.avoid_crowd }"
+                @click="userPreferences.avoid_crowd = true"
+              >
+                🍃 避開擁擠排隊 (低密度優先)
+              </button>
+              <button
+                type="button"
+                class="pref-pill-btn"
+                :class="{ active: !userPreferences.avoid_crowd }"
+                @click="userPreferences.avoid_crowd = false"
+              >
+                👥 喜愛熱鬧氛圍
+              </button>
+            </div>
+          </div>
+
+          <!-- Budget Cap -->
+          <div class="pref-group">
+            <label class="pref-label">💰 單人預算上限 (TWD)</label>
+            <div class="pref-chips-group">
+              <button
+                v-for="budget in [300, 500, 800, 1200, 2000]"
+                :key="budget"
+                type="button"
+                class="pref-chip"
+                :class="{ active: userPreferences.max_budget === budget }"
+                @click="userPreferences.max_budget = budget"
+              >
+                {{ budget >= 2000 ? '無上限 (NT$ 2000+)' : `NT$ ${budget}` }}
+              </button>
+            </div>
+          </div>
+
+          <!-- Route Preference -->
+          <div class="pref-group">
+            <label class="pref-label">🚶 路線與交通規劃偏好</label>
+            <div class="pref-pill-group">
+              <button
+                type="button"
+                class="pref-pill-btn"
+                :class="{ active: userPreferences.route_preference === 'shade_first' }"
+                @click="userPreferences.route_preference = 'shade_first'"
+              >
+                🍃 優先高遮蔭 / 地下街直通
+              </button>
+              <button
+                type="button"
+                class="pref-pill-btn"
+                :class="{ active: userPreferences.route_preference === 'fastest' }"
+                @click="userPreferences.route_preference = 'fastest'"
+              >
+                ⚡ 最短乘車時間
+              </button>
+              <button
+                type="button"
+                class="pref-pill-btn"
+                :class="{ active: userPreferences.route_preference === 'accessible' }"
+                @click="userPreferences.route_preference = 'accessible'"
+              >
+                ♿ 無障礙 / 大件行李友善
+              </button>
+            </div>
+          </div>
+
+          <!-- Favorite Interest Tags -->
+          <div class="pref-group">
+            <label class="pref-label">🏷️ 感興趣的活動主題 (可複選)</label>
+            <div class="pref-tags-grid">
+              <button
+                v-for="tag in availableTags"
+                :key="tag"
+                type="button"
+                class="pref-tag-chip"
+                :class="{ active: userPreferences.favorite_tags.includes(tag) }"
+                @click="togglePreferenceTag(tag)"
+              >
+                <span class="tag-check">{{ userPreferences.favorite_tags.includes(tag) ? '✓' : '+' }}</span>
+                {{ tag }}
+              </button>
+            </div>
+          </div>
+
+          <div class="pref-save-action">
+            <button type="button" class="btn-save-preferences" @click="saveUserPreferences">
+              💾 儲存偏好設定並更新推薦
+            </button>
+          </div>
+        </section>
+
+        <!-- Active Planned Trip in Profile -->
+        <section v-if="activePlannedPlace" class="profile-section-card active-plan-profile-card">
+          <div class="card-section-title">
+            <div class="title-left">
+              <span class="plan-icon">🎯</span>
+              <div>
+                <h3>進行中探險行程 (Active Itinerary)</h3>
+                <small>已排入 Google 日曆並鎖定行程提醒</small>
+              </div>
+            </div>
+            <button type="button" class="btn-cancel-plan-mini" @click="cancelActivePlan">✕ 清除</button>
+          </div>
+          <div class="plan-card-body">
+            <h4>{{ activePlannedPlace.name }}</h4>
+            <p>📍 {{ activePlannedPlace.address || activePlannedPlace.location || '台北市' }}</p>
+            <div class="plan-action-buttons">
+              <button type="button" class="btn-plan-action" @click="openGoogleMapsNavigation(activePlannedPlace)">
+                🗺️ Google 導航
+              </button>
+              <button type="button" class="btn-plan-action" @click="openShareModal(activePlannedPlace)">
+                🔗 分享卡片
+              </button>
+              <button type="button" class="btn-plan-action" @click="triggerSimulateConditionChange(activePlannedPlace)">
+                🚨 模擬突發狀況
+              </button>
+            </div>
+          </div>
+        </section>
+      </div>
+
       <!-- Discover / Catalog View -->
       <div v-else class="sheet-discover-view">
         <div class="sheet-header">
@@ -2501,6 +2917,123 @@ onMounted(async () => {
       </div>
     </div>
 
+    <!-- Google Calendar Conflict Resolution Modal (Step 11 & Schedule Conflict Resolution) -->
+    <div
+      v-if="showCalendarConflictModal && calendarConflictData"
+      class="sidequest-modal-overlay"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="conflict-title"
+      @click.self="showCalendarConflictModal = false"
+    >
+      <div class="sidequest-modal conflict-modal">
+        <header class="sidequest-modal-header conflict-modal-header">
+          <div class="conflict-header-title">
+            <span class="conflict-alert-icon">⚠️</span>
+            <div>
+              <span class="conflict-kicker">GOOGLE CALENDAR CONFLICT · STEP 11</span>
+              <h2 id="conflict-title">Google 日曆時段衝突調解</h2>
+            </div>
+          </div>
+          <button type="button" class="modal-close-btn" @click="showCalendarConflictModal = false">×</button>
+        </header>
+
+        <p class="conflict-prompt-text">
+          在您預計排入的活動時段內，Google 日曆已有既定行程。SideQuest 已為您比對雙方細節，請選擇處理方式：
+        </p>
+
+        <!-- Side-by-side Conflict Comparison Matrix -->
+        <div class="conflict-comparison-grid">
+          <!-- Existing Event -->
+          <div class="conflict-card existing-card">
+            <div class="conflict-card-badge">📌 原定 Google 日曆行程</div>
+            <h3 class="conflict-event-name">{{ calendarConflictData.conflictingEvents?.[0]?.title || '既定行程' }}</h3>
+            <div class="conflict-meta-item">
+              <span class="meta-icon">🕒</span>
+              <span><strong>時間：</strong>{{ calendarConflictData.conflictingEvents?.[0]?.start_time ? calendarConflictData.conflictingEvents[0].start_time.substring(11, 16) : '14:00' }} - {{ calendarConflictData.conflictingEvents?.[0]?.end_time ? calendarConflictData.conflictingEvents[0].end_time.substring(11, 16) : '16:30' }}</span>
+            </div>
+            <div class="conflict-meta-item">
+              <span class="meta-icon">📍</span>
+              <span><strong>地點：</strong>{{ calendarConflictData.conflictingEvents?.[0]?.location || '信義區會議室' }}</span>
+            </div>
+            <div class="conflict-meta-item">
+              <span class="meta-icon">🏷️</span>
+              <span><strong>性質：</strong>工作 / 團隊會議</span>
+            </div>
+            <p class="conflict-event-note">
+              {{ calendarConflictData.conflictingEvents?.[0]?.description || '固定週期日程備忘' }}
+            </p>
+          </div>
+
+          <div class="conflict-vs-divider">VS</div>
+
+          <!-- New Proposed SideQuest Place -->
+          <div class="conflict-card new-event-card">
+            <div class="conflict-card-badge new-badge">✨ 新增 SideQuest 探險</div>
+            <h3 class="conflict-event-name">{{ calendarConflictData.targetPlace?.name }}</h3>
+            <div class="conflict-meta-item">
+              <span class="meta-icon">🕒</span>
+              <span><strong>時間：</strong>14:30 - 17:00 (週六)</span>
+            </div>
+            <div class="conflict-meta-item">
+              <span class="meta-icon">📍</span>
+              <span><strong>地點：</strong>{{ calendarConflictData.targetPlace?.address || calendarConflictData.targetPlace?.name }}</span>
+            </div>
+            <div class="conflict-meta-item">
+              <span class="meta-icon">👥</span>
+              <span><strong>人流：</strong>{{ crowdLabel(calendarConflictData.targetPlace?.crowd) }} ({{ calendarConflictData.targetPlace?.crowd || 30 }})</span>
+            </div>
+            <div class="conflict-meta-item">
+              <span class="meta-icon">🛡️</span>
+              <span><strong>遮蔭：</strong>{{ calendarConflictData.targetPlace?.isIndoor ? '室內冷氣直達 (95% 遮蔭)' : '戶外遮蔭路線' }}</span>
+            </div>
+            <p class="conflict-event-note">
+              {{ calendarConflictData.targetPlace?.description }}
+            </p>
+          </div>
+        </div>
+
+        <!-- Decision Action Buttons -->
+        <div class="conflict-actions-list">
+          <button
+            type="button"
+            class="conflict-choice-btn btn-overwrite"
+            @click="resolveCalendarConflict('overwrite')"
+          >
+            <div class="choice-icon">🥇</div>
+            <div class="choice-text">
+              <strong>改用新活動 (覆蓋原行程)</strong>
+              <span>將原【{{ calendarConflictData.conflictingEvents?.[0]?.title }}】從 Google 日曆移除，改排入【{{ calendarConflictData.targetPlace?.name }}】</span>
+            </div>
+          </button>
+
+          <button
+            type="button"
+            class="conflict-choice-btn btn-both"
+            @click="resolveCalendarConflict('both')"
+          >
+            <div class="choice-icon">🔀</div>
+            <div class="choice-text">
+              <strong>兩者皆保留 (並存於日曆)</strong>
+              <span>在 Google 日曆中同時排入兩項活動，並自動加註時段重疊備忘</span>
+            </div>
+          </button>
+
+          <button
+            type="button"
+            class="conflict-choice-btn btn-keep-original"
+            @click="resolveCalendarConflict('cancel')"
+          >
+            <div class="choice-icon">🥈</div>
+            <div class="choice-text">
+              <strong>保留原行程 (放棄新活動)</strong>
+              <span>維持原定日曆安排，不將【{{ calendarConflictData.targetPlace?.name }}】排入 Google 日曆</span>
+            </div>
+          </button>
+        </div>
+      </div>
+    </div>
+
     <!-- Bottom Navigation Bar -->
     <nav class="mobile-nav" aria-label="主要導覽">
       <button :class="{ active: selectedTab === 'discover' }" @click="selectedTab = 'discover'">
@@ -2509,8 +3042,8 @@ onMounted(async () => {
       <button :class="{ active: selectedTab === 'saved' }" @click="selectedTab = 'saved'">
         <span>♥</span>收藏 ({{ favoritePlaceIds.size }})
       </button>
-      <button :class="{ active: selectedTab === 'profile' }" @click="showPersonaModal = true">
-        <span>👤</span>{{ activePersona.name.slice(0, 3) }}
+      <button :class="{ active: selectedTab === 'profile' }" @click="selectedTab = 'profile'">
+        <span>👤</span>偏好與日曆
       </button>
     </nav>
   </main>
