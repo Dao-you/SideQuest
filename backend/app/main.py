@@ -9,7 +9,6 @@ from fastapi.responses import JSONResponse
 
 from app.api.routes import (
     agent_router,
-    config_router,
     crowd_router,
     events_router,
     health_router,
@@ -159,7 +158,6 @@ app.include_router(health_router)
 app.include_router(health_router, prefix=settings.API_V1_PREFIX)
 
 # Include API v1 Routes
-app.include_router(config_router, prefix=settings.API_V1_PREFIX)
 app.include_router(agent_router, prefix=settings.API_V1_PREFIX)
 app.include_router(user_router, prefix=settings.API_V1_PREFIX)
 app.include_router(events_router, prefix=settings.API_V1_PREFIX)
