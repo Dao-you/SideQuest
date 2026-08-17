@@ -11,13 +11,26 @@ from app.services.interfaces import PlacesServiceInterface
 router = APIRouter(prefix="/routes", tags=["Routes"])
 
 
-@router.post("/compute", response_model=RouteComfort)
+@router.post("/compute", response_model=RouteComfort, summary="計算多元偏好之大眾運輸與遮陽抗熱路徑")
 async def compute_route(
     request: RouteComputeRequest,
     maps_service: PlacesServiceInterface = Depends(get_places_service_dep),
 ) -> RouteComfort:
-    """Compute transit routing and thermal comfort analysis between origin and destination."""
+    """
+    計算起點至目的地的大眾運輸與多運具出行方案，並評估遮陽抗熱舒適度與無障礙可行性。
+
+    支援路線偏好（Route Preferences）：
+    - `fastest` (經典/最快速)
+    - `wheelchair` (無障礙/推車/大件行李)
+    - `more_bus` (公車優先)
+    - `more_subway` (軌道/捷運優先)
+    - `less_walking` (少走點/減少步行)
+    - `more_shading` (遮陽避曬/地下街優先)
+    - `less_crowded` (避開擁擠/舒適車廂)
+    - `mixed` (多元混合模式：YouBike+捷運+步行)
+    """
     dest_name = request.destination_name or "目標活動場館"
+    pref_val = request.preference.value if hasattr(request.preference, "value") else str(request.preference)
     return await maps_service.compute_route(
         origin_lat=request.origin_lat,
         origin_lng=request.origin_lng,
@@ -25,6 +38,9 @@ async def compute_route(
         dest_lng=request.destination_lng,
         dest_name=dest_name,
         prioritize_shade=request.prioritize_shade,
+        preference=pref_val,
+        wheelchair_accessible=request.wheelchair_accessible,
+        departure_time=request.departure_time,
     )
 
 
@@ -236,6 +252,27 @@ async def visualize_routes(key: str = Query(default="", description="Optional Go
       box-shadow: 0 6px 16px rgba(2, 132, 199, 0.4);
       transform: translateY(-1px);
     }}
+    .pref-btn {{
+      background: #1e293b;
+      color: #cbd5e1;
+      border: 1px solid var(--border);
+      border-radius: 9999px;
+      padding: 5px 11px;
+      font-size: 0.74rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s;
+    }}
+    .pref-btn:hover {{
+      border-color: var(--primary);
+      color: #ffffff;
+    }}
+    .pref-btn.active {{
+      background: rgba(16, 185, 129, 0.2);
+      border-color: #10b981;
+      color: #34d399;
+      font-weight: 600;
+    }}
     .metrics-grid {{
       display: grid;
       grid-template-columns: repeat(2, 1fr);
@@ -376,23 +413,52 @@ async def visualize_routes(key: str = Query(default="", description="Optional Go
           </div>
         </div>
 
-        <div style="margin-top:10px; display:flex; align-items:center; gap:6px;">
-          <input type="checkbox" id="prioritizeShade" checked style="width:auto; cursor:pointer;" />
-          <label for="prioritizeShade" style="margin:0; cursor:pointer; color:var(--text); font-size:0.8rem;">
-            🌲 優先規劃地下街與林蔭遮蔽路徑 (Shade Priority)
-          </label>
+        <div class="form-group" style="margin-top:10px;">
+          <label>路線偏好策略 (Route Preference)</label>
+          <div style="display:flex; flex-wrap:wrap; gap:6px; margin-top:4px;">
+            <button type="button" class="pref-btn active" data-pref="fastest" onclick="setPreference('fastest', this)">🟢 經典最快</button>
+            <button type="button" class="pref-btn" data-pref="wheelchair" onclick="setPreference('wheelchair', this)">♿ 無障礙友善</button>
+            <button type="button" class="pref-btn" data-pref="more_bus" onclick="setPreference('more_bus', this)">🚌 公車+</button>
+            <button type="button" class="pref-btn" data-pref="more_subway" onclick="setPreference('more_subway', this)">🚇 軌道/捷運+</button>
+            <button type="button" class="pref-btn" data-pref="less_walking" onclick="setPreference('less_walking', this)">🚶 少走點</button>
+            <button type="button" class="pref-btn" data-pref="more_shading" onclick="setPreference('more_shading', this)">🛡️ 遮陽避曬</button>
+            <button type="button" class="pref-btn" data-pref="less_crowded" onclick="setPreference('less_crowded', this)">👥 避開人潮</button>
+            <button type="button" class="pref-btn" data-pref="mixed" onclick="setPreference('mixed', this)">🚲 混合運具</button>
+          </div>
         </div>
 
         <button class="btn-action" style="margin-top: 12px;" onclick="calculateRoute()">
-          ⚡ 計算 Google Routes & 熱舒適評估
+          ⚡ 計算 Google Routes & 多運具偏好分析
         </button>
       </div>
 
       <div class="card">
-        <h3>📊 熱舒適與人流指標 (Metrics)</h3>
+        <h3>🚲 多運具概覽比較 (Multimodal Estimates)</h3>
+        <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 6px;">
+          <div class="metric-box">
+            <div class="metric-label">🚶 步行估算</div>
+            <div class="metric-value" id="valWalk" style="font-size:0.9rem; color:#94a3b8;">-- 卡 / -- 分鐘</div>
+          </div>
+          <div class="metric-box">
+            <div class="metric-label">🚲 YouBike 2.0</div>
+            <div class="metric-value" id="valBike" style="font-size:0.9rem; color:#38bdf8;">-- 卡 / $20</div>
+          </div>
+          <div class="metric-box">
+            <div class="metric-label">🚕 計程車 / 專車</div>
+            <div class="metric-value" id="valTaxi" style="font-size:0.9rem; color:#f59e0b;">~-- 分鐘 / $--</div>
+          </div>
+          <div class="metric-box">
+            <div class="metric-label">🚇 大眾運輸</div>
+            <div class="metric-value" id="valTransit" style="font-size:0.9rem; color:#10b981;">-- 分鐘</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>📊 熱舒適與無障礙指標 (Metrics)</h3>
         <div class="metrics-grid">
           <div class="metric-box">
-            <div class="metric-label">預估交通時間</div>
+            <div class="metric-label">預估總耗時</div>
             <div class="metric-value" id="valDuration">-- 分鐘</div>
           </div>
           <div class="metric-box">
@@ -400,7 +466,7 @@ async def visualize_routes(key: str = Query(default="", description="Optional Go
             <div class="metric-value" id="valShade" style="color:var(--accent);">-- %</div>
           </div>
           <div class="metric-box">
-            <div class="metric-label">熱舒適評分</div>
+            <div class="metric-label">舒適度評分</div>
             <div class="metric-value" id="valScore" style="color:var(--warning);">-- / 100</div>
           </div>
           <div class="metric-box">
@@ -411,6 +477,8 @@ async def visualize_routes(key: str = Query(default="", description="Optional Go
         <div id="routeAdvice" style="font-size:0.8rem; color:var(--text-muted); margin-top:10px; line-height:1.45;">
           請點選計算以取得即時建議。
         </div>
+        <div id="accessNotes" style="font-size:0.75rem; color:#60a5fa; margin-top:6px; line-height:1.4;"></div>
+        <div id="crowdNotes" style="font-size:0.75rem; color:#34d399; margin-top:4px; line-height:1.4;"></div>
       </div>
 
       <div class="card">
@@ -655,15 +723,25 @@ async def visualize_routes(key: str = Query(default="", description="Optional Go
       }}
     }}
 
+    let selectedPreference = 'fastest';
+
+    function setPreference(pref, btn) {{
+      selectedPreference = pref;
+      document.querySelectorAll('.pref-btn').forEach(b => b.classList.remove('active'));
+      if (btn) btn.classList.add('active');
+      calculateRoute();
+    }}
+
     async function calculateRoute() {{
-      const prioritizeShade = document.getElementById('prioritizeShade').checked;
       const payload = {{
         origin_lat: currentOrigin.lat,
         origin_lng: currentOrigin.lng,
         destination_lat: currentDest.lat,
         destination_lng: currentDest.lng,
         destination_name: currentDest.name,
-        prioritize_shade: prioritizeShade,
+        prioritize_shade: selectedPreference === 'more_shading',
+        preference: selectedPreference,
+        wheelchair_accessible: selectedPreference === 'wheelchair',
         travel_mode: "TRANSIT"
       }};
 
@@ -686,6 +764,16 @@ async def visualize_routes(key: str = Query(default="", description="Optional Go
       document.getElementById('valScore').textContent = data.comfort_score + " 分";
       document.getElementById('valDist').textContent = data.total_distance_meters + " 公尺";
       document.getElementById('routeAdvice').textContent = data.route_advice;
+      
+      if (data.multimodal) {{
+        document.getElementById('valWalk').textContent = `${{data.multimodal.walk_calories}} 卡 / ${{data.multimodal.walk_duration_minutes}} 分鐘`;
+        document.getElementById('valBike').textContent = `${{data.multimodal.bike_calories}} 卡 / $${{data.multimodal.bike_cost_twd}}`;
+        document.getElementById('valTaxi').textContent = `~${{data.multimodal.taxi_duration_minutes}} 分鐘 / $${{data.multimodal.taxi_cost_twd}}`;
+        document.getElementById('valTransit').textContent = `${{data.total_duration_minutes}} 分鐘`;
+      }}
+      
+      document.getElementById('accessNotes').textContent = data.accessibility_note ? `♿ ${{data.accessibility_note}}` : '';
+      document.getElementById('crowdNotes').textContent = data.crowd_note ? `👥 ${{data.crowd_note}}` : '';
       document.getElementById('jsonViewer').textContent = JSON.stringify(data, null, 2);
 
       const stepsContainer = document.getElementById('stepsList');
