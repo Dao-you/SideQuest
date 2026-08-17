@@ -20,6 +20,7 @@
 - 正式 Cloud Run：backend `sidequest-backend-00029-5sp`、frontend `sidequest-demo-00029-khs`，兩者皆為 100% 流量；frontend build `2b95d7fb-ada1-49d4-9c8a-17a623109bb3`、backend build `533b8f51-ac3a-4b87-a74a-3292b4341d21`
 - 正式站指定網址：<https://sidequest-demo-917216410511.asia-east1.run.app>
 - 路線 UI icon 合併：`ui/unify-route-icons` 已以 merge commit `5e4e4d8` 合入 `main`；正式前端 Cloud Build `1c2707ef-dabd-4ba5-9d94-5ef609806c84` 成功，revision `sidequest-demo-00031-jzr` 已切換 100% 流量
+- mobile analysis / PK UI：`main` merge commit `57522d5` 已 push；正式前端 Cloud Build `e94268d9-faa5-4529-bf73-2a3ce17d3bc0` 成功，revision `sidequest-demo-00032-7cw` 已切換 100% 流量
 - 正式驗證：已在正式網址確認 SideQuest 圖形標誌、Google Maps、日期選擇器正常，沒有地圖錯誤或重複登入按鈕
 
 ## 建議合併流程
