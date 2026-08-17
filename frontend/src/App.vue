@@ -547,9 +547,13 @@ async function planRouteToPlace(place) {
     }
 
     if (!googleRoute && !route.hasRealPath) {
-      activeRoute.value = null
       clearMapRouteLayers()
-      Snackbar.warning('目前無法取得 Google Maps 實際路線，未顯示模擬路徑或固定步驟')
+      activeRoute.value = {
+        ...route,
+        pathUnavailable: true,
+        routeAdvice: `${route.routeAdvice} Google Maps 實際路徑暫時無法繪製，請開啟導航確認道路與班次。`,
+      }
+      Snackbar.warning(`${activeShadeScenario.value.label}遮蔭情境已產生，地圖路徑暫未繪製`)
       return
     }
 
@@ -1180,7 +1184,10 @@ onMounted(async () => {
         <div v-if="activeRoute" class="route-guidance-card">
           <div class="route-card-header">
             <div>
-              <span class="route-tag">{{ activeShadeScenario.label }} {{ activeRoute.isGoogleRoute ? 'GOOGLE MAPS 遮蔭情境' : '🛡️ 抗熱遮蔭情境' }}</span>
+              <span class="route-tag">
+                {{ activeShadeScenario.label }}
+                {{ activeRoute.pathUnavailable ? '遮蔭情境 · 路徑待確認' : (activeRoute.isGoogleRoute ? 'GOOGLE MAPS 遮蔭情境' : '🛡️ 抗熱遮蔭情境') }}
+              </span>
               <h3>{{ activeRoute.transitSummary }}</h3>
             </div>
             <div class="route-shade-badge">
