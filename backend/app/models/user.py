@@ -4,6 +4,18 @@ from typing import List, Optional
 from pydantic import BaseModel, Field
 
 
+class GoogleCalendarEvent(BaseModel):
+    """Google Calendar Event representation for schedule conflict detection."""
+    event_id: str = Field(..., description="Unique Google Calendar event ID")
+    title: str = Field(..., description="Event title / subject")
+    start_time: str = Field(..., description="ISO start time string, e.g. 2026-08-22T14:00:00+08:00")
+    end_time: str = Field(..., description="ISO end time string, e.g. 2026-08-22T16:30:00+08:00")
+    location: Optional[str] = Field(default="", description="Event location")
+    description: Optional[str] = Field(default="", description="Event notes or description")
+    category: str = Field(default="personal", description="Event category: work, meeting, social, personal, sidequest")
+    is_sidequest_event: bool = Field(default=False, description="Whether this event was synced from SideQuest")
+
+
 class UserProfile(BaseModel):
     """User Profile for Mock Persona and Login."""
     user_id: str = Field(..., description="Unique user ID or session user ID")
@@ -17,6 +29,10 @@ class UserProfile(BaseModel):
     prefer_indoor: bool = Field(default=True, description="Default indoor AC preference")
     avoid_crowd: bool = Field(default=True, description="Default crowd avoidance preference")
     max_budget: Optional[int] = Field(default=500, description="Default budget ceiling in TWD")
+    route_preference: str = Field(default="shade_first", description="Preferred routing strategy: shade_first, fastest, accessible")
+    google_account_connected: bool = Field(default=True, description="Whether Google Account and Calendar are linked")
+    google_email: str = Field(default="kevin.sidequest@gmail.com", description="Linked Google account email")
+    calendar_events: List[GoogleCalendarEvent] = Field(default_factory=list, description="Synced Google Calendar events")
     is_mock_account: bool = Field(default=True, description="Identifies mock MVP account")
 
 
@@ -49,3 +65,47 @@ class UpdatePreferencesRequest(BaseModel):
     prefer_indoor: Optional[bool] = None
     avoid_crowd: Optional[bool] = None
     max_budget: Optional[int] = None
+    route_preference: Optional[str] = None
+    google_account_connected: Optional[bool] = None
+    google_email: Optional[str] = None
+
+
+class CalendarConflictCheckRequest(BaseModel):
+    """Request to verify schedule conflict against user's Google Calendar."""
+    event_id: str = Field(..., description="Target SideQuest event or place ID")
+    event_title: str = Field(..., description="Target event or place name")
+    start_time: str = Field(..., description="ISO start time string (e.g. 2026-08-22T14:30:00+08:00)")
+    end_time: str = Field(..., description="ISO end time string (e.g. 2026-08-22T17:00:00+08:00)")
+    location: Optional[str] = Field(default="", description="Target location")
+
+
+class CalendarConflictCheckResponse(BaseModel):
+    """Response containing any detected Google Calendar schedule conflicts."""
+    has_conflict: bool = Field(..., description="True if an existing event overlaps with target time")
+    conflicting_events: List[GoogleCalendarEvent] = Field(default_factory=list, description="Overlapping events in Google Calendar")
+    message: str = Field(..., description="User-facing summary message")
+    suggested_action: str = Field(default="choose_resolution", description="Recommendation: none, choose_resolution, proceed")
+
+
+class CalendarSyncRequest(BaseModel):
+    """Request to add or overwrite an event in Google Calendar."""
+    event_id: str = Field(..., description="Target SideQuest event or place ID")
+    event_title: str = Field(..., description="Target event or place title")
+    start_time: str = Field(..., description="ISO start time string")
+    end_time: str = Field(..., description="ISO end time string")
+    location: Optional[str] = Field(default="", description="Place address or venue name")
+    description: Optional[str] = Field(default="", description="Event details, crowd level, tickets")
+    resolution_choice: str = Field(
+        default="overwrite",
+        description="Resolution for conflicts: 'overwrite' (replaces conflicting event), 'both' (keeps both), 'cancel' (keeps original)"
+    )
+
+
+class CalendarSyncResponse(BaseModel):
+    """Response after executing Google Calendar synchronization."""
+    success: bool
+    synced_event: Optional[GoogleCalendarEvent] = None
+    action_taken: str
+    message: str
+    all_calendar_events: List[GoogleCalendarEvent] = Field(default_factory=list)
+

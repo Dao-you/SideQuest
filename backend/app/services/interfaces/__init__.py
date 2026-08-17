@@ -6,7 +6,16 @@ from app.models.agent import FeedbackRequest, FeedbackResponse, QuickPromptsResp
 from app.models.crowd import HeatmapPoint, VenueLiveStatus
 from app.models.event import Event, EventFilter
 from app.models.places import PlaceDetails, RouteComfort
-from app.models.user import FavoriteToggleResponse, UpdatePreferencesRequest, UserProfile
+from app.models.user import (
+    CalendarConflictCheckRequest,
+    CalendarConflictCheckResponse,
+    CalendarSyncRequest,
+    CalendarSyncResponse,
+    FavoriteToggleResponse,
+    GoogleCalendarEvent,
+    UpdatePreferencesRequest,
+    UserProfile,
+)
 from app.models.weather import MicroclimateResponse, SolarExposureResponse
 
 
@@ -93,7 +102,7 @@ class PlacesServiceInterface(ABC):
 
 
 class UserServiceInterface(ABC):
-    """Interface for User Profile, Persona Demo Login, and Bookmarks."""
+    """Interface for User Profile, Persona Demo Login, Google Calendar, and Bookmarks."""
 
     @abstractmethod
     def list_personas(self) -> List[UserProfile]:
@@ -129,6 +138,22 @@ class UserServiceInterface(ABC):
     def update_preferences(self, user_id: str, req: UpdatePreferencesRequest) -> UserProfile:
         """Update user categories, tags, budget, and indoor/crowd preferences."""
         pass
+
+    @abstractmethod
+    def get_calendar_events(self, user_id: str) -> List[GoogleCalendarEvent]:
+        """Fetch synced Google Calendar events for the user."""
+        pass
+
+    @abstractmethod
+    def check_calendar_conflict(self, user_id: str, req: CalendarConflictCheckRequest) -> CalendarConflictCheckResponse:
+        """Check if a planned activity conflicts with existing Google Calendar events."""
+        pass
+
+    @abstractmethod
+    def sync_calendar_event(self, user_id: str, req: CalendarSyncRequest) -> CalendarSyncResponse:
+        """Add, overwrite, or keep both calendar events based on user resolution choice."""
+        pass
+
 
 
 class PromptMetadataServiceInterface(ABC):
