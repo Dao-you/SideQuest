@@ -120,7 +120,7 @@ export function decodePolyline(encoded) {
 
 export class RoutesService {
   /**
-   * Compute transit route with thermal comfort and shade optimization.
+   * Compute transit route with thermal comfort, multimodal comparison, and preference optimization.
    * @param {Object} params
    * @param {number} params.originLat
    * @param {number} params.originLng
@@ -129,6 +129,9 @@ export class RoutesService {
    * @param {string} [params.destName]
    * @param {boolean} [params.prioritizeShade=true]
    * @param {'morning'|'noon'|'evening'} [params.shadeTimePeriod='morning']
+   * @param {string} [params.preference='fastest']
+   * @param {boolean} [params.wheelchairAccessible=false]
+   * @param {string} [params.departureTime='now']
    */
   async computeRoute({
     originLat = 25.0478,
@@ -138,6 +141,9 @@ export class RoutesService {
     destName = '目標活動場地',
     prioritizeShade = true,
     shadeTimePeriod = 'morning',
+    preference = 'fastest',
+    wheelchairAccessible = false,
+    departureTime = 'now',
   }) {
     const payload = {
       origin_lat: originLat,
@@ -147,6 +153,9 @@ export class RoutesService {
       destination_name: destName,
       prioritize_shade: prioritizeShade,
       shade_time_period: shadeTimePeriod,
+      preference: preference,
+      wheelchair_accessible: wheelchairAccessible || preference === 'wheelchair',
+      departure_time: departureTime,
       travel_mode: 'TRANSIT',
     }
 
@@ -167,6 +176,7 @@ export class RoutesService {
       return {
         origin: result.origin,
         destination: result.destination,
+        preference: result.preference || preference,
         totalDurationMinutes: result.total_duration_minutes,
         totalDistanceMeters: result.total_distance_meters,
         transitSummary: result.transit_summary,
@@ -176,6 +186,20 @@ export class RoutesService {
         sunExposureMinutes: result.sun_exposure_minutes ?? 0,
         shadedDistanceMeters: result.shaded_distance_meters ?? Math.round(result.total_distance_meters * (result.underground_or_shaded_percentage / 100)),
         shadeTimePeriod: result.shade_time_period ?? shadeTimePeriod,
+        accessibilityNote: result.accessibility_note,
+        crowdNote: result.crowd_note,
+        multimodal: result.multimodal || {
+          walk_calories: Math.round(result.total_distance_meters * 0.06),
+          walk_duration_minutes: Math.round(result.total_distance_meters / 70),
+          walk_distance_meters: result.total_distance_meters,
+          bike_calories: Math.round(result.total_distance_meters * 0.04),
+          bike_duration_minutes: Math.round(result.total_distance_meters / 250),
+          bike_cost_twd: 20,
+          bike_station: `YouBike 2.0 站點 (近 ${destName})`,
+          taxi_duration_minutes: Math.max(5, Math.round(result.total_distance_meters / 420) + 3),
+          taxi_cost_twd: Math.max(85, Math.round(85 + (result.total_distance_meters / 200) * 5)),
+          transit_duration_minutes: result.total_duration_minutes,
+        },
         segments: result.segments || [],
         path: decodedPath,
         hasRealPath: Boolean(result.encoded_polyline),
@@ -183,21 +207,41 @@ export class RoutesService {
     } catch (err) {
       console.warn('Routes compute API failed, generating smart fallback route:', err)
       const scenario = fallbackShadeScenarios[shadeTimePeriod] || fallbackShadeScenarios.morning
+      const dist = Math.round(Math.hypot((originLat - destLat) * 111000, (originLng - destLng) * 100000)) || 2800
+      const walkMin = Math.max(5, Math.round(dist / 70))
+      const bikeMin = Math.max(3, Math.round(dist / 250))
+      const taxiMin = Math.max(5, Math.round(dist / 420) + 3)
+      const taxiFare = Math.max(85, Math.round(85 + (dist / 200) * 5))
       return {
-        origin: '目前位置 (台北市中心)',
+        origin: '目前位置 (台北市市區)',
         destination: destName,
+        preference: preference,
         totalDurationMinutes: 22,
-        totalDistanceMeters: 3200,
+        totalDistanceMeters: dist,
         transitSummary: '大眾運輸與步行示意（實際路徑待確認）',
         shadePercentage: scenario.shade,
         comfortScore: Math.round(scenario.shade * 0.6 + 40 - scenario.exposure * 1.5),
         sunExposureMinutes: scenario.exposure,
         shadedDistanceMeters: scenario.distance,
         shadeTimePeriod,
+        accessibilityNote: preference === 'wheelchair' ? '無障礙需求已記錄，實際電梯與坡道仍待 Google Maps 路徑確認' : '實際步行條件待確認',
+        crowdNote: preference === 'less_crowded' ? '避開人潮偏好已記錄，實際車廂人流待確認' : '即時人流待確認',
+        multimodal: {
+          walk_calories: Math.round(walkMin * 4.2),
+          walk_duration_minutes: walkMin,
+          walk_distance_meters: dist,
+          bike_calories: Math.round(bikeMin * 4.1),
+          bike_duration_minutes: bikeMin,
+          bike_cost_twd: 20,
+          bike_station: `YouBike 2.0 站點 (近 ${destName})`,
+          taxi_duration_minutes: taxiMin,
+          taxi_cost_twd: taxiFare,
+          transit_duration_minutes: 22,
+        },
         routeAdvice: `${scenario.label}保守 fallback：以共 500 公尺步行示意估算遮蔭約 ${scenario.shade}%，預估戶外直曬 ${scenario.exposure} 分鐘；實際路徑待 Google Maps 確認。`,
         segments: [
           { mode: 'WALK', instruction: '從目前位置步行至鄰近大眾運輸站點', duration_minutes: 4, distance_meters: 250, is_shaded_or_underground: false, shade_percentage: scenario.shade, segment_kind: 'walk' },
-          { mode: 'SUBWAY', instruction: '搭乘捷運抵達目標站點 (強冷空調)', duration_minutes: 14, distance_meters: 2700, is_shaded_or_underground: true },
+          { mode: preference === 'more_bus' ? 'BUS' : 'SUBWAY', instruction: preference === 'more_bus' ? '搭乘市區幹線公車前往目標區域' : '搭乘捷運抵達目標站點', duration_minutes: 14, distance_meters: Math.max(300, dist - 500), is_shaded_or_underground: true },
           { mode: 'WALK', instruction: `由大眾運輸站點步行抵達 ${destName}`, duration_minutes: 4, distance_meters: 250, is_shaded_or_underground: false, shade_percentage: scenario.shade, segment_kind: 'walk' },
         ],
         path: [

@@ -135,20 +135,99 @@ button { cursor: pointer; }
 .detail-quick-actions .favorited span { color: #e96363; border-color: #f7d5d5; background: #fef0f0; }
 .detail-quick-actions strong { font-size: 8px; font-weight: 720; white-space: nowrap; }
 
-/* Route Guidance Inside Place Detail */
-.route-guidance-card { margin: 12px 0 16px; padding: 14px 16px; border: 1px solid #cce0cb; border-radius: 18px; background: linear-gradient(145deg, #eef7eb, #f9faf4); box-shadow: 0 8px 24px rgba(60, 98, 70, .07); }
+/* Route Planning & Multimodal Interface (Photo Reference) */
+.route-planning-container { display: flex; flex-direction: column; gap: 12px; margin: 14px 0 18px; }
+
+.route-top-bar { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.route-back-btn { display: flex; align-items: center; gap: 4px; padding: 6px 10px; border: 1px solid #d0d7cf; border-radius: 12px; background: #ffffff; color: #52665b; font-size: 11px; font-weight: 600; cursor: pointer; transition: all 0.2s ease; }
+.route-back-btn:hover { background: #f0f4ee; color: #2e4438; }
+
+.route-time-selector-wrapper { position: relative; }
+.route-time-btn { display: flex; align-items: center; gap: 6px; padding: 6px 12px; border: 1px solid #bfdbfe; border-radius: 9999px; background: #eff6ff; color: #1d4ed8; font-size: 11px; cursor: pointer; transition: all 0.2s ease; }
+.route-time-btn:hover { background: #dbeafe; }
+.route-time-btn .chevron { font-size: 10px; opacity: 0.7; }
+
+.route-time-dropdown { position: absolute; top: calc(100% + 6px); left: 50%; transform: translateX(-50%); z-index: 100; min-width: 170px; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 14px; box-shadow: 0 10px 25px rgba(0, 0, 0, 0.12); padding: 6px; display: flex; flex-direction: column; gap: 4px; }
+.route-time-dropdown button { padding: 8px 10px; border: none; border-radius: 8px; background: transparent; text-align: left; font-size: 11px; color: #334155; cursor: pointer; transition: background 0.15s ease; }
+.route-time-dropdown button:hover, .route-time-dropdown button.active { background: #eff6ff; color: #1d4ed8; font-weight: 600; }
+
+.route-refresh-btn { width: 32px; height: 32px; border: 1px solid #d0d7cf; border-radius: 10px; background: #ffffff; color: #52665b; font-size: 14px; display: grid; place-items: center; cursor: pointer; transition: all 0.2s ease; }
+.route-refresh-btn:hover { background: #f0f4ee; transform: rotate(45deg); }
+
+/* Origin & Destination Card (Blue Gradient) */
+.route-od-card { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px; border-radius: 18px; background: linear-gradient(135deg, #1e3a8a 0%, #2563eb 100%); color: #ffffff; box-shadow: 0 10px 24px rgba(37, 99, 235, 0.22); }
+.route-od-lines { display: flex; flex-direction: column; gap: 6px; flex: 1; }
+.route-od-point { display: flex; align-items: center; gap: 10px; }
+.od-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+.origin-dot { background: #60a5fa; border: 2px solid #ffffff; }
+.dest-dot { background: #ef4444; border: 2px solid #ffffff; }
+.od-connector { width: 2px; height: 10px; background: rgba(255, 255, 255, 0.35); margin-left: 4px; }
+.od-text small { display: block; font-size: 9px; opacity: 0.75; letter-spacing: 0.05em; }
+.od-text strong { font-size: 12px; font-weight: 600; color: #ffffff; }
+.route-swap-btn { width: 36px; height: 36px; border: 1px solid rgba(255, 255, 255, 0.3); border-radius: 50%; background: rgba(255, 255, 255, 0.15); color: #ffffff; font-size: 16px; display: grid; place-items: center; cursor: pointer; backdrop-filter: blur(8px); transition: all 0.2s ease; }
+.route-swap-btn:hover { background: rgba(255, 255, 255, 0.3); transform: scale(1.08); }
+
+/* Horizontal Route Preference Pills */
+.route-pref-scroller { display: flex; gap: 8px; overflow-x: auto; padding: 2px 2px 6px; scrollbar-width: none; }
+.route-pref-scroller::-webkit-scrollbar { display: none; }
+.route-pref-pill { display: flex; align-items: center; gap: 6px; padding: 8px 14px; border: 1px solid #dce4d9; border-radius: 9999px; background: #ffffff; color: #4b6354; font-size: 11px; font-weight: 500; white-space: nowrap; cursor: pointer; transition: all 0.2s ease; box-shadow: 0 2px 6px rgba(0, 0, 0, 0.03); }
+.route-pref-pill:hover { border-color: #3c6254; color: #203529; transform: translateY(-1px); }
+.route-pref-pill.active { background: #3c6254; border-color: #3c6254; color: #ffffff; font-weight: 700; box-shadow: 0 4px 12px rgba(60, 98, 84, 0.25); }
+.route-pref-pill .pref-icon { font-size: 12px; }
+
+/* Multimodal Overview Grid */
+.multimodal-overview-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin: 4px 0; }
+.modal-box { padding: 8px 6px; border: 1px solid #e2e8dc; border-radius: 14px; background: #ffffff; text-align: center; display: flex; flex-direction: column; gap: 4px; transition: all 0.2s ease; }
+.modal-box.highlight { border-color: #86efac; background: #f0fdf4; }
+.modal-box.highlight-transit { border-color: #93c5fd; background: #eff6ff; }
+.modal-box-header { display: flex; align-items: center; justify-content: center; gap: 4px; }
+.modal-icon { font-size: 13px; }
+.modal-title { font-size: 10px; color: #64748b; font-weight: 600; }
+.modal-metrics strong { font-size: 13px; color: #1e293b; font-weight: 700; display: block; line-height: 1.1; }
+.modal-metrics span { font-size: 9px; color: #64748b; margin-top: 2px; display: block; }
+.shade-pill { color: #16a34a !important; font-weight: 600; }
+
+/* Detailed Option Cards Stack */
+.youbike-option-card { padding: 12px 14px; border: 1px solid #fed7aa; border-radius: 16px; background: linear-gradient(135deg, #fffaf5, #fff7ed); box-shadow: 0 4px 14px rgba(249, 115, 22, 0.06); }
+.badge-youbike { padding: 3px 8px; border-radius: 6px; background: #ffedd5; color: #c2410c; font-size: 10px; font-weight: 700; }
+.option-card-header { display: flex; justify-content: space-between; align-items: center; }
+.option-title-group { display: flex; align-items: center; gap: 8px; }
+.option-price { font-size: 13px; font-weight: 800; color: #ea580c; }
+.option-duration strong { font-size: 16px; font-weight: 800; color: #1e293b; }
+.option-duration small { font-size: 9px; color: #64748b; }
+.option-meta-row { font-size: 10px; color: #78716c; margin: 6px 0 4px; }
+.option-desc { margin: 0; font-size: 10px; color: #57534e; line-height: 1.5; }
+
+.transit-plan-card { padding: 14px 16px; border: 1px solid #cce0cb; border-radius: 18px; background: linear-gradient(145deg, #eef7eb, #f9faf4); box-shadow: 0 8px 24px rgba(60, 98, 70, .07); }
+.route-feature-badges { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+.feat-badge { font-size: 9px; font-weight: 600; padding: 3px 8px; border-radius: 6px; }
+.access-badge { background: #dbeafe; color: #1e40af; border: 1px solid #bfdbfe; }
+.crowd-badge { background: #dcfce7; color: #15803d; border: 1px solid #bbf7d0; }
+.sun-badge { background: #fef3c7; color: #92400e; border: 1px solid #fde68a; }
+
+.route-steps { display: grid; gap: 7px; border-top: 1px dashed #d5ded1; padding-top: 10px; margin-top: 8px; }
+.route-step { display: flex; align-items: flex-start; gap: 9px; }
+.step-num { display: grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; color: #fff; background: #5a816c; font-size: 9px; font-weight: 800; flex-shrink: 0; }
+.step-info { flex: 1; }
+.step-main { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.step-main strong { font-size: 11px; color: #374b3f; }
+.step-tag-shade { font-size: 8px; background: #dcfce7; color: #15803d; padding: 1px 5px; border-radius: 4px; font-weight: 600; }
+.step-tag-access { font-size: 8px; background: #dbeafe; color: #1e40af; padding: 1px 5px; border-radius: 4px; font-weight: 600; }
+.step-info small { font-size: 9px; color: #788c80; display: block; margin-top: 2px; }
+
+.taxi-option-card { padding: 12px 14px; border: 1px solid #e2e8f0; border-radius: 16px; background: #ffffff; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.04); }
+.badge-taxi { padding: 3px 8px; border-radius: 6px; background: #fef3c7; color: #b45309; font-size: 10px; font-weight: 700; }
+.taxi-actions { margin-top: 8px; }
+.taxi-nav-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; width: 100%; padding: 8px 12px; border-radius: 10px; background: #2563eb; color: #ffffff; font-size: 11px; font-weight: 600; text-decoration: none; transition: background 0.2s ease; }
+.taxi-nav-btn:hover { background: #1d4ed8; }
+
 .route-card-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
-.route-tag { display: inline-block; padding: 3px 8px; border-radius: 99px; font-size: 8px; font-weight: 800; color: #3c6254; background: #d7edd2; letter-spacing: .05em; }
+.route-tag { display: inline-block; padding: 3px 8px; border-radius: 99px; font-size: 9px; font-weight: 800; color: #3c6254; background: #d7edd2; letter-spacing: .05em; }
 .route-card-header h3 { margin: 5px 0 0; font-size: 14px; color: #2d4637; }
 .route-shade-badge { text-align: right; }
 .route-shade-badge strong { display: block; font-size: 18px; color: #3c6254; line-height: 1; }
 .route-shade-badge small { font-size: 8px; color: #7f9184; }
-.route-advice-copy { margin: 8px 0 12px; font-size: 10px; color: #627668; line-height: 1.55; }
-.route-steps { display: grid; gap: 7px; border-top: 1px dashed #d5ded1; padding-top: 10px; }
-.route-step { display: flex; align-items: flex-start; gap: 9px; }
-.step-num { display: grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; color: #fff; background: #5a816c; font-size: 8px; font-weight: 800; flex-shrink: 0; }
-.step-info strong { display: block; font-size: 10px; color: #374b3f; }
-.step-info small { font-size: 8px; color: #85968b; }
+.route-advice-copy { margin: 6px 0 8px; font-size: 11px; color: #627668; line-height: 1.55; }
 
 .detail-status-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px; margin: 10px 0 18px; }
 .detail-status-grid > div { display: grid; min-width: 0; min-height: 74px; padding: 10px; border: 1px solid #e6e8e1; border-radius: 15px; align-content: center; background: #fffefa; }

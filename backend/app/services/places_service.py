@@ -30,6 +30,9 @@ class PlacesService(PlacesServiceInterface):
         dest_name: str = "目的地",
         prioritize_shade: bool = True,
         shade_time_period: ShadeTimePeriod = ShadeTimePeriod.MORNING,
+        preference: str = "fastest",
+        wheelchair_accessible: bool = False,
+        departure_time: Optional[str] = None,
     ) -> RouteComfort:
         """Compute transit and shaded pedestrian route with comfort rating."""
         return await self.maps.compute_route(
@@ -40,6 +43,9 @@ class PlacesService(PlacesServiceInterface):
             dest_name=dest_name,
             prioritize_shade=prioritize_shade,
             shade_time_period=shade_time_period,
+            preference=preference,
+            wheelchair_accessible=wheelchair_accessible,
+            departure_time=departure_time,
         )
 
 

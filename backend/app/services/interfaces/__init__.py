@@ -85,8 +85,11 @@ class PlacesServiceInterface(ABC):
         dest_name: str = "目的地",
         prioritize_shade: bool = True,
         shade_time_period: ShadeTimePeriod = ShadeTimePeriod.MORNING,
+        preference: str = "fastest",
+        wheelchair_accessible: bool = False,
+        departure_time: Optional[str] = None,
     ) -> RouteComfort:
-        """Compute transit and shaded pedestrian route with comfort rating."""
+        """Compute transit and shaded pedestrian route with comfort rating and routing preferences."""
         pass
 
 
