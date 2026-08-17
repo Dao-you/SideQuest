@@ -30,11 +30,13 @@ if ! gcloud artifacts repositories describe "${REPO_NAME}" --location="${REGION}
 fi
 
 IMAGE_URI="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPO_NAME}/${IMAGE_NAME}:latest"
+MAPS_API_KEY="${VITE_GOOGLE_MAPS_API_KEY:-AIzaSyBvHetpB7ilLcNSJXeecfVgaLQ7b3TGobY}"
 
 # Step 2: Build Container via Cloud Build
-echo "🏗️ Building Frontend Docker container via Cloud Build..."
+echo "🏗️ Building Frontend Docker container via Cloud Build with Google Maps API key..."
 gcloud builds submit . \
-  --tag="${IMAGE_URI}" \
+  --config=cloudbuild.yaml \
+  --substitutions="_REGION=${REGION},_REPOSITORY=${REPO_NAME},_MAPS_API_KEY=${MAPS_API_KEY},_API_BASE_URL=/api/v1,_EVENT_SOURCE=api,_AGENT_SOURCE=agent" \
   --project="${PROJECT_ID}"
 
 # Step 3: Deploy to Cloud Run

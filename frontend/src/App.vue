@@ -10,7 +10,8 @@ import { crowdService } from './services/crowdService'
 import { routesService } from './services/routesService'
 import { userService } from './services/userService'
 
-const MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY
+const MAPS_API_KEY =
+  import.meta.env.VITE_GOOGLE_MAPS_API_KEY || 'AIzaSyBvHetpB7ilLcNSJXeecfVgaLQ7b3TGobY'
 const TAIPEI_CENTER = { lat: 25.0478, lng: 121.5170 }
 const mapElement = ref(null)
 const sheetElement = ref(null)
