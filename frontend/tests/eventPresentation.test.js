@@ -31,5 +31,6 @@ test('uses source coordinates and only explicit crowd measurements', () => {
   assert.deepEqual(place.position, { lat: 25.0478, lng: 121.517 })
   assert.equal(place.crowd, 42)
   assert.equal(place.crowdIsMock, true)
-  assert.equal(place.sun, null)
+  assert.equal(place.sun, 35)
+  assert.equal(place.shade, 65)
 })

@@ -5,6 +5,7 @@ from typing import Dict, List, Optional
 import httpx
 
 from app.config import settings
+from app.logging_config import logger
 from app.models.places import PlaceDetails, RouteComfort, RouteSegment
 from app.models.weather import MicroclimateResponse, SolarExposureResponse, UVRiskLevel, WeatherCondition
 from app.services.urban_shade_service import get_urban_shade_engine

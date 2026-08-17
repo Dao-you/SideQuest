@@ -24,13 +24,12 @@ class WeatherService(WeatherServiceInterface):
                 longitude=longitude,
                 temperature_c=34.2,
                 apparent_temperature_c=38.5,
-                relative_humidity_percentage=75,
+                humidity_percentage=75,
                 uv_index=8.8,
                 rain_probability_percentage=15,
-                condition="sunny",
-                heat_comfort_level="HOT",
-                thermal_sensation_index=88,
-                is_indoor_ac_recommended=True,
+                condition="hot_sun",
+                comfort_description="高溫與高紫外線，建議優先選擇室內空調活動並避開正午曝曬。",
+                indoor_recommended=True,
                 uv_risk_level="VERY_HIGH",
             )
 
@@ -43,11 +42,11 @@ class WeatherService(WeatherServiceInterface):
             return SolarExposureResponse(
                 latitude=latitude,
                 longitude=longitude,
-                direct_solar_irradiance_w_m2=820.0,
+                solar_radiation_w_m2=820.0,
                 shade_coverage_percentage=25,
                 sun_exposure_level="HIGH_EXPOSURE",
-                sunscreen_spf_recommended=50,
-                shaded_route_recommended=True,
+                sunscreen_recommendation="建議 SPF 50 防曬並優先使用捷運地下街或遮蔭路線。",
+                best_transit_mode="transit_underground",
             )
 
 
