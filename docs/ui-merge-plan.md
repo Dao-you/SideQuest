@@ -18,6 +18,7 @@
 - Smart-trip 驗證：frontend 9/9、backend 52 passed、`npm run build`、`git diff --check` 通過；Cloud Run 已確認 logo、Google Maps 與日期選擇器載入
 - 正式合併：目前 `main` 為 `9b1bc6c`，包含 smart-trip、UI 改善與既有登入更新；正式部署前再次完成 frontend 9/9、backend 52 passed、`npm run build` 與 `git diff --check`
 - 正式 Cloud Run：backend `sidequest-backend-00029-5sp`、frontend `sidequest-demo-00029-khs`，兩者皆為 100% 流量；frontend build `2b95d7fb-ada1-49d4-9c8a-17a623109bb3`、backend build `533b8f51-ac3a-4b87-a74a-3292b4341d21`
+- 正式站指定網址：<https://sidequest-demo-917216410511.asia-east1.run.app>
 - 正式驗證：已在正式網址確認 SideQuest 圖形標誌、Google Maps、日期選擇器正常，沒有地圖錯誤或重複登入按鈕
 
 ## 建議合併流程
