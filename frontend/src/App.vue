@@ -73,7 +73,7 @@ const feedbackMap = ref(new Map())
 const activeRoute = ref(null)
 const routeLoading = ref(false)
 let currentPolyline = null
-let currentDirectionsRenderer = null
+const currentRoutePolylines = []
 let userLocationOverlay = null
 
 // Heatmap State (PRD 8)
@@ -283,9 +283,17 @@ async function loadEvents() {
 }
 
 function syncMarkerSelection() {
+  const recommendedIds = new Set(
+    aiRecommendations.value.map((card) => card.event?.id).filter(Boolean),
+  )
   markers.forEach((markerRecord, id) => {
     markerRecord.content?.classList.toggle('is-active', id === activePlaceId.value)
-    if (markerRecord.content) markerRecord.content.style.zIndex = id === activePlaceId.value ? '100' : '1'
+    markerRecord.content?.classList.toggle('is-recommended', recommendedIds.has(id))
+    if (markerRecord.content) {
+      markerRecord.content.style.zIndex = id === activePlaceId.value
+        ? '100'
+        : (recommendedIds.has(id) ? '50' : '1')
+    }
   })
 }
 
@@ -355,16 +363,9 @@ function revealPlaceOnMap(place) {
 }
 
 // Interactive Route Planning (PRD 10)
-function plainTextFromHtml(html) {
-  const element = document.createElement('div')
-  element.innerHTML = html || ''
-  return element.textContent?.trim() || '依 Google Maps 指示前進'
-}
-
 function clearMapRouteLayers() {
-  if (currentDirectionsRenderer) {
-    currentDirectionsRenderer.setMap(null)
-    currentDirectionsRenderer = null
+  while (currentRoutePolylines.length > 0) {
+    currentRoutePolylines.pop()?.setMap(null)
   }
   if (currentPolyline) {
     currentPolyline.setMap(null)
@@ -373,41 +374,49 @@ function clearMapRouteLayers() {
 }
 
 async function renderGoogleDirections(origin, destination) {
-  const { DirectionsRenderer, DirectionsService, TravelMode } = await window.google.maps.importLibrary('routes')
-  const directionsService = new DirectionsService()
-  const result = await directionsService.route({
+  const { Route } = await window.google.maps.importLibrary('routes')
+  const { LatLngBounds } = await window.google.maps.importLibrary('core')
+  const { routes } = await Route.computeRoutes({
     origin,
     destination,
-    travelMode: TravelMode.TRANSIT,
-    provideRouteAlternatives: false,
+    travelMode: 'TRANSIT',
+    departureTime: new Date(),
+    computeAlternativeRoutes: false,
+    languageCode: 'zh-TW',
+    regionCode: 'TW',
+    units: 'METRIC',
+    fields: ['path', 'legs', 'localizedValues'],
   })
 
+  const route = routes?.[0]
+  const leg = route?.legs?.[0]
+  if (!route || !leg) throw new Error('Google Routes did not return a route leg')
+
   clearMapRouteLayers()
-  currentDirectionsRenderer = new DirectionsRenderer({
-    map: map.value,
-    directions: result,
-    suppressMarkers: true,
-    preserveViewport: false,
-    polylineOptions: {
+  route.createPolylines().forEach((polyline) => {
+    polyline.setOptions?.({
       strokeColor: '#3c6254',
       strokeOpacity: 0.92,
       strokeWeight: 6,
-    },
+    })
+    polyline.setMap(map.value)
+    currentRoutePolylines.push(polyline)
   })
 
-  const leg = result.routes?.[0]?.legs?.[0]
-  if (!leg) throw new Error('Google Directions did not return a route leg')
+  const bounds = new LatLngBounds()
+  route.path.forEach((point) => bounds.extend(point))
+  map.value.fitBounds(bounds, 70)
 
   return {
     isGoogleRoute: true,
-    totalDurationMinutes: Math.max(1, Math.round((leg.duration?.value || 0) / 60)),
-    totalDistanceMeters: leg.distance?.value || 0,
-    transitSummary: `Google Maps 大眾運輸約 ${leg.duration?.text || '時間待確認'}`,
+    totalDurationMinutes: Math.max(1, Math.round((leg.durationMillis || 0) / 60000)),
+    totalDistanceMeters: leg.distanceMeters || 0,
+    transitSummary: `Google Maps 大眾運輸約 ${leg.localizedValues?.duration || '時間待確認'}`,
     segments: (leg.steps || []).map((step) => ({
-      mode: step.travel_mode || 'TRANSIT',
-      instruction: plainTextFromHtml(step.instructions),
-      duration_minutes: Math.max(1, Math.round((step.duration?.value || 0) / 60)),
-      distance_meters: step.distance?.value || 0,
+      mode: step.travelMode || 'TRANSIT',
+      instruction: step.instructions || '依 Google Maps 指示前進',
+      duration_minutes: Math.max(1, Math.round((step.staticDurationMillis || 0) / 60000)),
+      distance_meters: step.distanceMeters || 0,
       is_shaded_or_underground: false,
     })),
   }
@@ -624,6 +633,7 @@ async function explore() {
   aiThoughtSteps.value = []
   aiParsedCriteria.value = null
   aiRecommendations.value = []
+  syncMarkerSelection()
   aiDispersalSummary.value = ''
   aiOneSentenceSummary.value = ''
 
@@ -644,6 +654,7 @@ async function explore() {
         } else if (type === 'recommendation_cards') {
           aiRecommendations.value = data.cards || []
           aiDispersalSummary.value = data.dispersal_summary || ''
+          syncMarkerSelection()
         } else if (type === 'done') {
           aiOneSentenceSummary.value = data.one_sentence_summary || ''
         }
@@ -661,6 +672,7 @@ async function explore() {
     }
     if (result.recommendations?.length && !aiRecommendations.value.length) {
       aiRecommendations.value = result.recommendations
+      syncMarkerSelection()
     }
     if (result.dispersal_summary && !aiDispersalSummary.value) {
       aiDispersalSummary.value = result.dispersal_summary

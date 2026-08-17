@@ -68,12 +68,19 @@ button { cursor: pointer; }
 .route-banner-close { border: 0; background: transparent; color: #a4b5aa; font-size: 20px; line-height: 1; padding: 0 4px; }
 
 .map-state { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 10px; color: #60756a; background: rgba(225, 235, 219, .72); backdrop-filter: blur(2px); font-size: 13px; z-index: 2; }
-.map-place-marker { position: absolute; display: flex; align-items: center; cursor: pointer; transform: translate(-15px, -100%); filter: drop-shadow(0 5px 8px rgba(48, 64, 51, .2)); transition: transform .2s ease, filter .2s ease; }
-.map-place-marker__pin { position: relative; z-index: 2; display: grid; place-items: center; width: 31px; height: 31px; flex: 0 0 auto; border: 3px solid #fff; border-radius: 50% 50% 50% 5px; color: #fff; background: var(--pin-color); font-size: 10px; font-weight: 850; transform: rotate(-45deg); }
+.map-place-marker { position: absolute; display: flex; align-items: center; opacity: .78; cursor: pointer; transform: translate(-12px, -100%); filter: drop-shadow(0 4px 6px rgba(48, 64, 51, .16)); transition: transform .2s ease, filter .2s ease, opacity .2s ease; }
+.map-place-marker__pin { position: relative; z-index: 2; display: grid; place-items: center; width: 24px; height: 24px; flex: 0 0 auto; border: 2px solid #fff; border-radius: 50% 50% 50% 5px; color: #fff; background: var(--pin-color); font-size: 8px; font-weight: 850; transform: rotate(-45deg); transition: width .2s ease, height .2s ease, border-width .2s ease, font-size .2s ease; }
 .map-place-marker__pin span { text-indent: 1px; transform: rotate(45deg); }
-.map-place-marker__label { max-width: 112px; overflow: hidden; margin-left: -7px; padding: 7px 10px 7px 13px; border: 1px solid rgba(52, 68, 56, .12); border-radius: 0 10px 10px 0; color: #3d5146; background: rgba(255, 255, 252, .95); font-size: 10px; font-weight: 720; text-overflow: ellipsis; white-space: nowrap; }
-.map-place-marker.is-active { transform: translate(-15px, -100%) scale(1.08); filter: drop-shadow(0 8px 13px rgba(48, 64, 51, .28)); }
-.map-place-marker.is-active .map-place-marker__label { max-width: 165px; color: #fff; background: #355947; }
+.map-place-marker__label { max-width: 0; overflow: hidden; margin-left: 0; padding: 0; border: 0 solid rgba(52, 68, 56, .12); border-radius: 0 10px 10px 0; opacity: 0; color: #3d5146; background: rgba(255, 255, 252, .95); font-size: 10px; font-weight: 720; text-overflow: ellipsis; white-space: nowrap; transform: translateX(-5px); transition: max-width .2s ease, margin .2s ease, padding .2s ease, border-width .2s ease, opacity .16s ease; }
+.map-place-marker:hover, .map-place-marker:focus-within, .map-place-marker.is-recommended, .map-place-marker.is-active { opacity: 1; filter: drop-shadow(0 7px 11px rgba(48, 64, 51, .24)); }
+.map-place-marker:hover, .map-place-marker:focus-within { transform: translate(-15px, -100%) scale(1.06); }
+.map-place-marker:hover .map-place-marker__pin, .map-place-marker:focus-within .map-place-marker__pin, .map-place-marker.is-recommended .map-place-marker__pin { width: 30px; height: 30px; border-width: 3px; font-size: 9px; }
+.map-place-marker:hover .map-place-marker__label, .map-place-marker:focus-within .map-place-marker__label, .map-place-marker.is-recommended .map-place-marker__label, .map-place-marker.is-active .map-place-marker__label { max-width: 118px; margin-left: -7px; padding: 7px 10px 7px 13px; border-width: 1px; opacity: 1; }
+.map-place-marker.is-recommended { transform: translate(-15px, -100%) scale(1.05); }
+.map-place-marker.is-recommended .map-place-marker__label { color: #355947; background: #f4fbef; border-color: #9fc49a; }
+.map-place-marker.is-active { transform: translate(-19px, -100%) scale(1.12); filter: drop-shadow(0 10px 15px rgba(48, 64, 51, .32)); }
+.map-place-marker.is-active .map-place-marker__pin { width: 38px; height: 38px; border-width: 3px; font-size: 11px; }
+.map-place-marker.is-active .map-place-marker__label { max-width: 190px; padding-block: 9px; color: #fff; background: #355947; border-color: #355947; font-size: 11px; }
 .map-user-location { position: absolute; width: 18px; height: 18px; border: 3px solid #fff; border-radius: 50%; background: #2f7ee6; box-shadow: 0 0 0 8px rgba(47, 126, 230, .18), 0 3px 10px rgba(32, 67, 108, .36); transform: translate(-50%, -50%); }
 .map-info-card { display: grid; max-width: 225px; gap: 5px; padding: 3px 2px; color: #34483d; font-family: Inter, "Noto Sans TC", sans-serif; }
 .map-info-card__eyebrow { color: #799080; font-size: 9px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; }
