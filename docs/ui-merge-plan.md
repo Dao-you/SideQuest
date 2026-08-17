@@ -9,7 +9,7 @@
   - `538d7b6 fix(frontend): polish responsive activity UI`
 - 驗證：`npm test` 9/9、`npm run build`、`git diff --check` 通過
 - Cloud Run 測試副本：已部署至 `sidequest-demo-ui-polish`
-- 測試網址：<https://sidequest-demo-ui-polish-917216410511.asia-east1.run.app>
+- 測試網址：<https://sidequest-demo-ui-polish-cjpexdy77a-de.a.run.app>
 - 測試 image：`frontend-ui-polish`
 
 ## 建議合併流程
