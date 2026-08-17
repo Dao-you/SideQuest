@@ -164,14 +164,18 @@ uv run dev
 
 ### 1.5 前端 SideQuest Demo
 
-前端 prototype 使用 Vue 3、Varlet 與 Google Maps JavaScript API。景點與人流/曝曬指標目前都 hardcode 在 `frontend/src/App.vue`，後續可直接替換成 backend API response。
+前端 demo 使用 Vue 3、Varlet 與 Google Maps JavaScript API。活動資料透過 `EventDataSource` 介面載入，目前的 `CsvEventDataSource` 讀取 `frontend/public/data/taipeidope_events.csv`；Agent 則透過 `AgentService` 介面使用 `MockAgentService`。這一版完全只跑前端，之後可切換 `ApiEventDataSource` 與 `HttpAgentService`，不需要重寫 UI。
 
 ```powershell
 cd frontend
 npm install
+$env:VITE_EVENT_SOURCE = 'csv'
+$env:VITE_AGENT_SOURCE = 'mock'
 $env:VITE_GOOGLE_MAPS_API_KEY = '<your browser-restricted key>'
 npm run dev
 ```
+
+若要預覽未來 backend adapter 的介面，改用 `VITE_EVENT_SOURCE=api` 或 `VITE_AGENT_SOURCE=http`，並設定對應的 `VITE_EVENTS_API_URL` / `VITE_AGENT_API_URL`；目前 demo 不需要 backend 才能操作。
 
 部署 Cloud Run 時，請用 gcloud 取得受限 API key 後透過 Cloud Build substitution 注入，不要把 key 寫進 repository：
 
