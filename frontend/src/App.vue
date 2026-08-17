@@ -98,6 +98,7 @@ const markers = new Map()
 let mapInfoWindow = null
 let sheetDragStartY = 0
 let sheetDragStartHeight = 0
+let mapFocusTimer = null
 
 const filters = computed(() => {
   const base = ['為你推薦', '室內避暑', '低人流', '免費入場']
@@ -330,13 +331,41 @@ function showMapInfo(place, markerRecord) {
   mapInfoWindow.open({ map: map.value, shouldFocus: false })
 }
 
+function getMapBottomInset() {
+  if (!mapElement.value || !sheetElement.value) return 0
+  const mapRect = mapElement.value.getBoundingClientRect()
+  const sheetRect = sheetElement.value.getBoundingClientRect()
+  const horizontalOverlap = Math.min(mapRect.right, sheetRect.right) - Math.max(mapRect.left, sheetRect.left)
+  if (horizontalOverlap <= 0 || sheetRect.top >= mapRect.bottom) return 0
+  const overlap = mapRect.bottom - Math.max(mapRect.top, sheetRect.top)
+  return Math.max(0, Math.min(overlap, mapRect.height - 80))
+}
+
+function focusPlaceInVisibleMap(place, { zoom = 14, settle = true } = {}) {
+  if (!map.value || !place?.position) return
+  const applyFocus = () => {
+    map.value.panTo(place.position)
+    map.value.setZoom(zoom)
+    const bottomInset = getMapBottomInset()
+    if (bottomInset > 0) map.value.panBy(0, bottomInset / 2)
+  }
+
+  window.requestAnimationFrame(applyFocus)
+  window.clearTimeout(mapFocusTimer)
+  if (settle) mapFocusTimer = window.setTimeout(applyFocus, 380)
+}
+
+function refocusSelectedPlace() {
+  const place = places.value.find((candidate) => candidate.id === activePlaceId.value)
+  if (place) focusPlaceInVisibleMap(place)
+}
+
 function selectPlace(place) {
   if (!place) return
   activePlaceId.value = place.id
   const marker = markers.get(place.id)
   if (marker && map.value && place.position) {
-    map.value.panTo(place.position)
-    map.value.setZoom(14)
+    focusPlaceInVisibleMap(place)
     syncMarkerSelection()
     showMapInfo(place, marker)
   }
@@ -373,6 +402,38 @@ function clearMapRouteLayers() {
   }
 }
 
+function fitRouteInVisibleMap(bounds) {
+  const bottomInset = getMapBottomInset()
+  map.value.fitBounds(bounds, {
+    top: 70,
+    right: 70,
+    bottom: bottomInset + 70,
+    left: 70,
+  })
+}
+
+function routeStepInstruction(step) {
+  if (step.instructions?.trim()) return step.instructions
+
+  const transit = step.transitDetails
+  if (transit) {
+    const line = transit.transitLine?.shortName
+      || transit.transitLine?.name
+      || transit.transitLine?.vehicle?.name
+      || '大眾運輸'
+    const departure = transit.departureStop?.name
+    const arrival = transit.arrivalStop?.name
+    const direction = transit.headsign ? `（往 ${transit.headsign}）` : ''
+    const stops = transit.stopCount ? `，共 ${transit.stopCount} 站` : ''
+    if (departure && arrival) return `從 ${departure} 搭乘 ${line}${direction} 至 ${arrival}${stops}`
+    return `搭乘 ${line}${direction}${stops}`
+  }
+
+  return String(step.travelMode).includes('WALK')
+    ? '依 Google Maps 步行路徑前進'
+    : '依 Google Maps 路線前進'
+}
+
 async function renderGoogleDirections(origin, destination) {
   const { Route } = await window.google.maps.importLibrary('routes')
   const { LatLngBounds } = await window.google.maps.importLibrary('core')
@@ -404,7 +465,7 @@ async function renderGoogleDirections(origin, destination) {
 
   const bounds = new LatLngBounds()
   route.path.forEach((point) => bounds.extend(point))
-  map.value.fitBounds(bounds, 70)
+  fitRouteInVisibleMap(bounds)
 
   return {
     isGoogleRoute: true,
@@ -413,7 +474,7 @@ async function renderGoogleDirections(origin, destination) {
     transitSummary: `Google Maps 大眾運輸約 ${leg.localizedValues?.duration || '時間待確認'}`,
     segments: (leg.steps || []).map((step) => ({
       mode: step.travelMode || 'TRANSIT',
-      instruction: step.instructions || '依 Google Maps 指示前進',
+      instruction: routeStepInstruction(step),
       duration_minutes: Math.max(1, Math.round((step.staticDurationMillis || 0) / 60000)),
       distance_meters: step.distanceMeters || 0,
       is_shaded_or_underground: false,
@@ -466,7 +527,7 @@ async function planRouteToPlace(place) {
 
       const bounds = new window.google.maps.LatLngBounds()
       route.path.forEach((pt) => bounds.extend(pt))
-      map.value.fitBounds(bounds, 70)
+      fitRouteInVisibleMap(bounds)
     }
 
     if (!googleRoute && !route.hasRealPath) {
@@ -565,12 +626,14 @@ function toggleSheet() {
     sheetExpanded.value = true
   }
   sheetDragHeight.value = null
+  nextTick(refocusSelectedPlace)
 }
 
 function minimizeSheet() {
   sheetExpanded.value = false
   sheetMinimized.value = true
   sheetDragHeight.value = null
+  nextTick(refocusSelectedPlace)
 }
 
 function getSheetSnapHeights() {
@@ -611,6 +674,7 @@ function endSheetDrag(event) {
     sheetExpanded.value = true
   }
   sheetDragHeight.value = null
+  nextTick(refocusSelectedPlace)
 }
 
 function useQuickPrompt(value) {
@@ -845,12 +909,18 @@ async function initMap() {
     map.value = new window.google.maps.Map(mapElement.value, {
       center: TAIPEI_CENTER,
       zoom: 12,
-      mapId: 'DEMO_MAP_ID',
       minZoom: 11,
       maxZoom: 17,
       disableDefaultUI: true,
-      clickableIcons: true,
+      clickableIcons: false,
       gestureHandling: 'greedy',
+      styles: [
+        {
+          featureType: 'poi',
+          elementType: 'all',
+          stylers: [{ visibility: 'off' }],
+        },
+      ],
     })
     places.value.filter((place) => place.position).forEach(addMarker)
     syncMarkerSelection()
