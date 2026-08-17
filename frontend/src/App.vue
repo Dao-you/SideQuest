@@ -4,10 +4,9 @@ import { Loader } from '@googlemaps/js-api-loader'
 import { Badge, Button, Chip, Input, Progress, Snackbar } from '@varlet/ui'
 import { createEventDataSource } from './data/eventDataSource'
 import { toEventPlace } from './data/eventPresentation'
+import { createAgentService } from './services/agentService'
 
 const MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY
-const AGENT_API_URL = import.meta.env.VITE_AGENT_API_URL || ''
-
 const mapElement = ref(null)
 const mapState = ref('loading')
 const mapError = ref('')
@@ -29,6 +28,8 @@ const quickPrompts = ['今天下午想看展，不想太熱', '想找人少的�
 const places = ref([])
 const eventDataSource = createEventDataSource()
 const eventSourceLabel = eventDataSource.label
+const agentService = createAgentService()
+const agentServiceLabel = agentService.label
 
 async function loadEvents() {
   eventsLoading.value = true
@@ -92,21 +93,13 @@ async function explore() {
   aiReply.value = ''
   aiError.value = ''
   try {
-    const response = await fetch(`${AGENT_API_URL}/api/v1/agent/ai-recommend`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: prompt.value.trim(), events: places.value }),
-    })
-    if (!response.ok) throw new Error(`Agent request failed: ${response.status}`)
-    const result = await response.json()
+    const result = await agentService.recommend({ message: prompt.value.trim(), events: places.value })
     aiReply.value = result.reply || '我已收到你的需求，先從這些活動開始探索吧。'
     activeFilter.value = '為你推薦'
-    activePlaceId.value = places.value[0]?.id ?? ''
-    Snackbar.success(`Gemini 已根據 ${result.used_event_count ?? places.value.length} 個活動完成分析`)
+    activePlaceId.value = result.recommended_ids?.[0] ?? places.value[0]?.id ?? ''
+    Snackbar.success(`${agentServiceLabel} 已根據 ${result.used_event_count ?? places.value.length} 個活動完成分析`)
   } catch (error) {
-    aiError.value = AGENT_API_URL
-      ? 'Agent 暫時沒有回應，推薦卡仍可直接瀏覽。'
-      : '尚未設定 Agent API 位址；先瀏覽 CSV 活動，部署 backend 後即可啟用 Gemini。'
+    aiError.value = 'Agent 暫時沒有回應，推薦卡仍可直接瀏覽。'
     console.error(error)
   } finally {
     isExploring.value = false
@@ -260,7 +253,7 @@ onMounted(async () => {
       </div>
 
       <div v-if="isExploring || aiReply || aiError" class="agent-response" :class="{ failed: aiError }">
-        <div class="agent-response-heading"><span>✦</span> Vertex AI · Gemini <em v-if="isExploring">正在理解你的感受…</em></div>
+        <div class="agent-response-heading"><span>✦</span> {{ agentServiceLabel }} <em v-if="isExploring">正在理解你的感受…</em></div>
         <p v-if="isExploring" class="agent-loading-copy">正在比較 CSV 裡的活動、日期、地點與人流舒適度。</p>
         <p v-else-if="aiError" class="agent-error-copy">{{ aiError }}</p>
         <p v-else>{{ aiReply }}</p>

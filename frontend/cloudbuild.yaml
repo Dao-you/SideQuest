@@ -10,6 +10,8 @@ steps:
       - VITE_AGENT_API_URL=${_AGENT_API_URL}
       - --build-arg
       - VITE_EVENT_SOURCE=${_EVENT_SOURCE}
+      - --build-arg
+      - VITE_AGENT_SOURCE=${_AGENT_SOURCE}
       - .
 images:
   - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/frontend:$BUILD_ID
@@ -19,5 +21,6 @@ substitutions:
   _MAPS_API_KEY: ""
   _AGENT_API_URL: ""
   _EVENT_SOURCE: csv
+  _AGENT_SOURCE: mock
 options:
   logging: CLOUD_LOGGING_ONLY
