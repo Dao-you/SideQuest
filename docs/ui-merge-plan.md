@@ -16,6 +16,9 @@
 - Smart-trip 套用結果：本地 `feat/smart-trip-features`（追蹤 `second/feat/smart-trip-features`）已以 merge commit `c074654` 合入 UI 改善，並以 `38694aa` 清理新功能文案與重複登入入口
 - Smart-trip 測試副本：<https://sidequest-smart-trip-ui-917216410511.asia-east1.run.app>，revision `sidequest-smart-trip-ui-00001-95g`
 - Smart-trip 驗證：frontend 9/9、backend 52 passed、`npm run build`、`git diff --check` 通過；Cloud Run 已確認 logo、Google Maps 與日期選擇器載入
+- 正式合併：目前 `main` 為 `9b1bc6c`，包含 smart-trip、UI 改善與既有登入更新；正式部署前再次完成 frontend 9/9、backend 52 passed、`npm run build` 與 `git diff --check`
+- 正式 Cloud Run：backend `sidequest-backend-00029-5sp`、frontend `sidequest-demo-00029-khs`，兩者皆為 100% 流量；frontend build `2b95d7fb-ada1-49d4-9c8a-17a623109bb3`、backend build `533b8f51-ac3a-4b87-a74a-3292b4341d21`
+- 正式驗證：已在正式網址確認 SideQuest 圖形標誌、Google Maps、日期選擇器正常，沒有地圖錯誤或重複登入按鈕
 
 ## 建議合併流程
 
