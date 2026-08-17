@@ -87,6 +87,11 @@ SideQuest/
 ├── IMPLEMENTATION_PROPOSAL.md          # 完整技術實作提案與架構白皮書
 ├── plan.md                             # 競賽原始規劃與背景
 ├── README.md                           # 本文件
+├── frontend/                           # Vue 3 + Varlet + Google Maps demo
+│   ├── src/App.vue                     # 台北市 hardcode 景點、地圖與推薦面板
+│   ├── Dockerfile                      # Cloud Run static frontend image
+│   ├── cloudbuild.yaml                 # Cloud Build image pipeline
+│   └── nginx.conf                      # SPA fallback 與靜態資產快取
 └── backend/
     ├── Dockerfile                      # Cloud Run 多階段建置 Dockerfile
     ├── docker-compose.yml              # 本地容器化啟動配置
@@ -156,6 +161,27 @@ uv run dev
 ```
 
 > 💡 *若使用傳統 pip，亦可執行 `python3 -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt`。*
+
+### 1.5 前端 SideQuest Demo
+
+前端 prototype 使用 Vue 3、Varlet 與 Google Maps JavaScript API。景點與人流/曝曬指標目前都 hardcode 在 `frontend/src/App.vue`，後續可直接替換成 backend API response。
+
+```powershell
+cd frontend
+npm install
+$env:VITE_GOOGLE_MAPS_API_KEY = '<your browser-restricted key>'
+npm run dev
+```
+
+部署 Cloud Run 時，請用 gcloud 取得受限 API key 後透過 Cloud Build substitution 注入，不要把 key 寫進 repository：
+
+```powershell
+$gcloud = 'C:\Program Files (x86)\Google\Cloud SDK\google-cloud-sdk\bin\gcloud.cmd'
+$project = 'YOUR_PROJECT_ID'
+$keyName = & $gcloud services api-keys list --project=$project --format='value(name)' --filter='displayName:SideQuest Maps Browser Key' | Select-Object -First 1
+$mapsKey = & $gcloud services api-keys get-key-string $keyName --project=$project --format='value(keyString)'
+& $gcloud builds submit . --config=cloudbuild.yaml --project=$project --substitutions="_MAPS_API_KEY=$mapsKey,_REGION=asia-east1,_REPOSITORY=sidequest"
+```
 
 ### 2. 測試 API 與互動式文件
 - **本機 Swagger UI**：[http://localhost:8080/docs](http://localhost:8080/docs)

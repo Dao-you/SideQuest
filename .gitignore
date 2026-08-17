@@ -20,6 +20,11 @@ wheels/
 .installed.cfg
 *.egg
 
+# Frontend dependencies and local build artifacts
+node_modules/
+.npm-cache/
+frontend/dist/
+
 # Virtual Environments
 .venv/
 env/
