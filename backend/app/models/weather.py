@@ -37,6 +37,7 @@ class MicroclimateResponse(BaseModel):
     uv_risk_level: UVRiskLevel = Field(..., description="UV Risk Assessment")
     condition: WeatherCondition = Field(default=WeatherCondition.CLEAR)
     comfort_description: str = Field(..., description="Human-readable microclimate advice")
+    solar_radiation_w_m2: Optional[float] = Field(default=None, description="Global solar irradiance W/m²")
     indoor_recommended: bool = Field(default=False, description="Whether indoor activities are strongly advised")
 
 

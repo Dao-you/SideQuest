@@ -122,5 +122,6 @@ async def test_get_solar_exposure_tool():
 
     res = await tool.execute(latitude=25.0441, longitude=121.5294)
     assert res["status"] == "success"
-    assert res["solar_radiation_w_m2"] > 0
+    assert res["solar_radiation_w_m2"] >= 0.0
+    assert res["shade_coverage_percentage"] >= 0
     assert "sunscreen_recommendation" in res

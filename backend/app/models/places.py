@@ -49,6 +49,8 @@ class RouteComfort(BaseModel):
     underground_or_shaded_percentage: int = Field(..., ge=0, le=100, description="% of walk protected from sun")
     comfort_score: float = Field(..., ge=0.0, le=100.0, description="Transit comfort rating")
     route_advice: str
+    sun_exposure_minutes: float = Field(default=0.0, description="Estimated direct sun exposure duration in minutes")
+    shaded_distance_meters: Optional[int] = Field(default=None, description="Total protected distance in meters")
     segments: List[RouteSegment] = Field(default_factory=list)
     encoded_polyline: Optional[str] = Field(default=None, description="Google Polyline encoded path string")
 
