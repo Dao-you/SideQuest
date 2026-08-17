@@ -900,20 +900,6 @@ function addMarker(place) {
   markers.set(place.id, { content, overlay })
 }
 
-async function fetchMapsApiKey() {
-  if (rawEnvMapsKey) return rawEnvMapsKey
-  try {
-    const res = await fetch('/api/v1/config/maps-key')
-    if (res.ok) {
-      const data = await res.json()
-      if (data.maps_api_key) return data.maps_api_key
-    }
-  } catch (err) {
-    console.warn('Could not fetch dynamic maps key from backend config:', err)
-  }
-  return ''
-}
-
 async function initMap() {
   mapState.value = 'loading'
   window.gm_authFailure = () => {
@@ -921,7 +907,7 @@ async function initMap() {
     mapError.value = 'Google Maps 認證授權中，正在套用專案網域白名單…'
   }
 
-  const mapsApiKey = await fetchMapsApiKey()
+  const mapsApiKey = rawEnvMapsKey
   if (!mapsApiKey) {
     mapState.value = 'error'
     mapError.value = '尚未設定 Google Maps API key (請設定 GCP 專案環境變數)'
