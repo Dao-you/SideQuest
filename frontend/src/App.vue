@@ -289,6 +289,8 @@ const activeShadeScenario = computed(() =>
   SHADE_TIME_SCENARIOS.find((scenario) => scenario.id === shadeTimePeriod.value) ?? SHADE_TIME_SCENARIOS[0]
 )
 
+const aiReplyText = computed(() => cleanAgentText(aiReply.value))
+
 const bookmarkedPlaces = computed(() =>
   places.value.filter((p) => favoritePlaceIds.value.has(p.id))
 )
@@ -327,6 +329,26 @@ function crowdClass(score) {
   if (score < 35) return 'good'
   if (score < 65) return 'medium'
   return 'busy'
+}
+
+function cleanAgentText(value) {
+  return String(value || '')
+    .replace(/\r\n?/g, '\n')
+    .replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+    .replace(/`{1,3}([^`]+)`{1,3}/g, '$1')
+    .replace(/(^|\n)\s{0,3}#{1,6}\s*/g, '$1')
+    .replace(/(^|\n)\s{0,3}>\s?/g, '$1')
+    .replace(/(^|\n)\s*[-*+]\s+/g, '$1')
+    .replace(/(^|\n)\s*\d+[.)]\s+/g, '$1')
+    .replace(/\*\*([^*]+)\*\*/g, '$1')
+    .replace(/__([^_]+)__/g, '$1')
+    .replace(/\*([^*\n]+)\*/g, '$1')
+    .replace(/_([^_\n]+)_/g, '$1')
+    .replace(/^\s*([-*_]){3,}\s*$/gm, '')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
 }
 
 function routeStepContext(step) {
@@ -1944,7 +1966,7 @@ onMounted(async () => {
     <section
       ref="sheetElement"
       class="bottom-sheet"
-      :class="{ expanded: sheetExpanded, minimized: sheetMinimized, dragging: sheetDragging }"
+      :class="{ expanded: sheetExpanded, minimized: sheetMinimized, dragging: sheetDragging, 'has-pk-selection': pkPlaces.length > 0 }"
       :style="sheetStyle"
       aria-label="SideQuest 探索面板"
     >
@@ -2682,9 +2704,9 @@ onMounted(async () => {
             </div>
           </div>
 
-          <p v-if="isExploring && !aiReply" class="agent-markdown-text">正在整理適合你的活動…</p>
-          <p v-else-if="aiReply" class="agent-markdown-text">{{ aiReply }}</p>
-          <p v-if="aiError" class="agent-markdown-text">{{ aiError }}</p>
+          <p v-if="isExploring && !aiReply" class="agent-response-text">正在整理適合你的活動…</p>
+          <p v-else-if="aiReplyText" class="agent-response-text">{{ aiReplyText }}</p>
+          <p v-if="aiError" class="agent-response-text">{{ aiError }}</p>
         </div>
 
         <!-- Recommendation Cards -->
@@ -2929,18 +2951,18 @@ onMounted(async () => {
     <!-- Floating PK Bottom Bar (Step 8) -->
     <div v-if="pkPlaces.length > 0" class="floating-pk-bar">
       <div class="pk-bar-info" @click="showPkModal = true">
-        <span class="pk-bar-icon">⚖️</span>
+        <span class="pk-bar-icon"><UiIcon name="compare" /></span>
         <div>
-          <strong>活動 PK 比較 ({{ pkPlaces.length }}/3)</strong>
-          <small>點擊展開多準則對比矩陣 (人潮、遮蔭、車程、票價)</small>
+          <strong>已選 {{ pkPlaces.length }} 個活動</strong>
+          <small>比較人流、遮蔭、交通與票價</small>
         </div>
       </div>
       <div class="pk-bar-actions">
         <button type="button" class="pk-matrix-open-btn" @click="showPkModal = true">
-          查看 PK 矩陣 ↗
+          查看比較
         </button>
         <button type="button" class="pk-bar-clear-btn" @click="clearPk" title="清空清單">
-          ✕
+          <UiIcon name="close" />
         </button>
       </div>
     </div>

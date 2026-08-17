@@ -298,7 +298,7 @@ button { cursor: pointer; }
 .agent-response-heading { display: flex; align-items: center; gap: 6px; color: #4f755b; font-size: 10px; font-weight: 750; }
 .agent-response-heading span { color: #8aac75; font-size: 15px; }
 .agent-response-heading em { color: #9baa9e; font-size: 9px; font-style: normal; font-weight: 500; }
-.agent-markdown-text { margin: 8px 0 0; color: #506655; font-size: 11px; line-height: 1.68; white-space: pre-line; }
+.agent-response-text { margin: 8px 0 0; color: #506655; font-size: 11px; line-height: 1.68; white-space: pre-line; }
 
 /* Parsed Intent Tags */
 .parsed-criteria-row { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
@@ -476,7 +476,7 @@ button { cursor: pointer; }
   .quick-prompt { white-space: nowrap; font-size: 11px; }
   .agent-response-heading { font-size: 12px; }
   .agent-response-heading em { font-size: 10px; }
-  .agent-markdown-text { font-size: 13px; }
+  .agent-response-text { font-size: 13px; }
   .criteria-badge { font-size: 10px; }
   .thought-toggle-btn { font-size: 11px; }
   .step-body strong { font-size: 11px; }
@@ -2588,4 +2588,77 @@ button:focus-visible, a:focus-visible, [role="button"]:focus-visible {
   .mobile-nav { min-height: 64px; padding: 7px 8px; }
   .mobile-nav button { display: grid; min-width: 0; min-height: 48px; flex: 1; place-items: center; gap: 3px; padding: 5px 8px; font-size: 11px; line-height: 1.1; }
   .mobile-nav button span { display: grid; min-height: 17px; place-items: center; font-family: "Segoe UI Symbol", "Noto Sans Symbols 2", ui-sans-serif, sans-serif; font-size: 17px; line-height: 1; }
+}
+
+/* Mobile readability and PK comparison dock */
+.pk-bar-icon { display: grid; width: 34px; height: 34px; flex: 0 0 auto; place-items: center; border-radius: 10px; color: #d9f0d0; background: rgba(232, 245, 233, .16); }
+.pk-bar-icon .ui-icon { width: 18px; height: 18px; }
+.pk-bar-clear-btn { display: grid; place-items: center; }
+.pk-bar-clear-btn .ui-icon { width: 15px; height: 15px; }
+
+@media (max-width: 620px) {
+  .bottom-sheet.has-pk-selection { padding-bottom: 168px; }
+
+  .agent-response { padding: 16px; }
+  .agent-response-heading { font-size: 14px; line-height: 1.4; }
+  .agent-response-heading em { font-size: 12px; }
+  .agent-response-text { margin-top: 11px; font-size: 15px; line-height: 1.78; }
+  .parsed-criteria-row { gap: 7px; }
+  .criteria-badge { padding: 5px 9px; font-size: 12px; }
+  .thought-toggle-btn { min-height: 46px; font-size: 13px; }
+  .thought-toggle-btn small { font-size: 12px; }
+  .step-body strong { font-size: 13px; }
+  .step-body p { font-size: 12px; line-height: 1.55; }
+
+  .sheet-header h1 { font-size: 27px; }
+  .prompt-input :deep(.var-input__inner) { font-size: 15px; }
+  .quick-prompt { font-size: 13px; }
+  .recommendation-header h2 { font-size: 23px; }
+  .section-kicker { font-size: 11px; }
+  .filter-chip { --chip-font-size: 13px; }
+  .place-card h3 { font-size: 17px; }
+  .place-category, .place-distance { font-size: 11px; }
+  .place-meta { font-size: 12px; }
+  .place-card p { font-size: 13px; line-height: 1.65; }
+  .metric { font-size: 12px; }
+  .metric strong { font-size: 12px; }
+  .metric-icon { font-size: 15px; }
+  .rec-kicker { font-size: 11px; }
+  .agent-rec-header h2 { font-size: 22px; }
+  .agent-rec-header strong { font-size: 12px; }
+  .rec-card-title { font-size: 17px; }
+  .rec-card-reason { font-size: 13px; line-height: 1.65; }
+  .rec-badge { font-size: 11px; }
+  .rec-metric-item small { font-size: 11px; }
+  .rec-metric-item strong { font-size: 12px; }
+  .rec-transit-guide { font-size: 12px; }
+  .detail-hero-copy h1 { font-size: 21px; }
+  .detail-hero-copy strong { font-size: 11px; }
+  .detail-hero-copy small { font-size: 10px; }
+  .detail-quick-actions strong { font-size: 11px; }
+  .detail-status-grid small { font-size: 10px; }
+  .detail-status-grid strong { font-size: 12px; }
+  .detail-section-heading h2 { font-size: 15px; }
+  .detail-facts dt { font-size: 11px; }
+  .detail-facts dd { font-size: 12px; }
+  .detail-section > p { font-size: 12px; line-height: 1.75; }
+
+  .floating-pk-bar {
+    right: 10px;
+    bottom: calc(78px + env(safe-area-inset-bottom));
+    left: 10px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 9px;
+    max-width: none;
+    padding: 10px;
+    border-radius: 18px;
+  }
+  .pk-bar-info { min-width: 0; gap: 8px; }
+  .pk-bar-info strong { overflow: hidden; font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }
+  .pk-bar-info small { overflow: hidden; margin-top: 2px; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+  .pk-bar-actions { min-width: 126px; display: grid; grid-template-columns: minmax(0, 1fr) 42px; gap: 6px; }
+  .pk-matrix-open-btn { min-height: 42px; padding: 0 10px; border-radius: 11px; font-size: 12px; }
+  .pk-bar-clear-btn { width: 42px; height: 42px; padding: 0; border-radius: 11px; }
+  .pk-bar-clear-btn .ui-icon { width: 16px; height: 16px; }
 }
