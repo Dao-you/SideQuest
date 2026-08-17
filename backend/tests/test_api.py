@@ -149,12 +149,8 @@ async def test_agent_chat_stream(async_client: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_config_endpoints(async_client: AsyncClient):
-    """Test dynamic runtime configuration endpoint."""
+async def test_config_endpoints_not_exposed(async_client: AsyncClient):
+    """Ensure dynamic maps-key endpoint is NOT exposed on public API."""
     res = await async_client.get("/api/v1/config/maps-key")
-    assert res.status_code == 200
-    data = res.json()
-    assert "maps_api_key" in data
-    assert "gcp_project_id" in data
-    assert "environment" in data
+    assert res.status_code == 404
 
