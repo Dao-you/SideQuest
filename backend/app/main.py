@@ -42,13 +42,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     await firestore_service.initialize()
     lan_ip = get_lan_ip()
     port = settings.PORT
-    logger.info(f"Database and services initialized successfully.")
-    print(f"\n========================================================")
-    print(f"🌟 SideQuest Backend is running and accessible on LAN:")
-    print(f"   🏠 Local URL:   http://localhost:{port}/docs")
-    print(f"   🌐 Network/LAN: http://{lan_ip}:{port}/docs")
-    print(f"   💓 Healthz:     http://{lan_ip}:{port}/healthz")
-    print(f"========================================================\n")
+    logger.info("Database and services initialized successfully.")
+    logger.info("SideQuest Backend local docs: http://localhost:%s/docs", port)
+    logger.info("SideQuest Backend LAN docs: http://%s:%s/docs", lan_ip, port)
+    logger.info("SideQuest Backend health: http://%s:%s/healthz", lan_ip, port)
     yield
     logger.info("Shutting down SideQuest Backend...")
 
