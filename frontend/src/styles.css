@@ -1883,4 +1883,452 @@ button { cursor: pointer; }
   color: #4b5563;
 }
 
+/* ==========================================================================
+   Google Authentication & Identity UI Styling
+   ========================================================================== */
+
+.google-authenticated-card {
+  border: 1.5px solid rgba(66, 133, 244, 0.35) !important;
+  background: linear-gradient(145deg, #ffffff 0%, #f4f8ff 100%) !important;
+  box-shadow: 0 4px 18px rgba(66, 133, 244, 0.12) !important;
+}
+
+.google-avatar-glow {
+  box-shadow: 0 0 0 3px rgba(66, 133, 244, 0.25), 0 3px 10px rgba(66, 133, 244, 0.2);
+  border: 2px solid #4285f4;
+  overflow: hidden;
+}
+
+.profile-avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
+}
+
+.dot-google {
+  background: #34a853 !important;
+  box-shadow: 0 0 6px #34a853;
+}
+
+.badge-google {
+  background: #e8f0fe !important;
+  color: #1a73e8 !important;
+  font-weight: 700;
+  border: 1px solid rgba(66, 133, 244, 0.3);
+}
+
+.profile-google-login-box {
+  margin-top: 14px;
+  padding: 14px 16px;
+  background: linear-gradient(135deg, #f8faff 0%, #eef4ff 100%);
+  border: 1.5px solid #d2e3fc;
+  border-radius: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.google-login-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.google-login-text strong {
+  font-size: 14px;
+  color: #1e3a8a;
+}
+
+.google-login-text span {
+  font-size: 12px;
+  color: #475569;
+  line-height: 1.4;
+}
+
+.google-login-action-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.btn-google-signin-main {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  background: #ffffff;
+  color: #3c4043;
+  font-weight: 600;
+  font-size: 14px;
+  padding: 9px 18px;
+  border-radius: 24px;
+  border: 1px solid #dadce0;
+  cursor: pointer;
+  box-shadow: 0 1px 3px rgba(60, 64, 67, 0.15);
+  transition: all 0.2s ease;
+}
+
+.btn-google-signin-main:hover {
+  background: #f8fafd;
+  border-color: #4285f4;
+  box-shadow: 0 2px 6px rgba(66, 133, 244, 0.25);
+  transform: translateY(-1px);
+}
+
+.profile-google-active-box {
+  margin-top: 12px;
+  padding: 12px 14px;
+  background: #ecfdf5;
+  border: 1px solid #a7f3d0;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.active-status-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.active-status-left strong {
+  font-size: 13px;
+  color: #065f46;
+  display: block;
+}
+
+.active-status-left small {
+  font-size: 11px;
+  color: #047857;
+}
+
+.btn-google-signout {
+  padding: 5px 12px;
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 16px;
+  font-size: 12px;
+  color: #475569;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.btn-google-signout:hover {
+  background: #fee2e2;
+  border-color: #fca5a5;
+  color: #b91c1c;
+}
+
+/* Modal Google Section */
+.persona-google-section {
+  background: linear-gradient(135deg, #f8faff 0%, #eff6ff 100%);
+  border: 1.5px solid #bfdbfe;
+  border-radius: 14px;
+  padding: 14px 16px;
+  margin-bottom: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.google-section-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.google-section-header strong {
+  font-size: 14px;
+  color: #1e3a8a;
+  display: block;
+}
+
+.google-section-header small {
+  font-size: 11px;
+  color: #64748b;
+}
+
+.google-signin-action-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.btn-modal-google-auth {
+  flex: 1;
+  min-width: 220px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 16px;
+  background: #1a73e8;
+  color: #ffffff;
+  font-weight: 600;
+  font-size: 13px;
+  border: none;
+  border-radius: 20px;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(26, 115, 232, 0.3);
+  transition: all 0.2s ease;
+}
+
+.btn-modal-google-auth:hover:not(:disabled) {
+  background: #1557b0;
+  transform: translateY(-1px);
+}
+
+.btn-modal-google-custom {
+  padding: 8px 14px;
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 20px;
+  font-size: 12px;
+  color: #475569;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-modal-google-custom:hover {
+  background: #f1f5f9;
+  border-color: #94a3b8;
+}
+
+.persona-divider {
+  display: flex;
+  align-items: center;
+  text-align: center;
+  margin: 16px 0 12px 0;
+  color: #94a3b8;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.persona-divider::before,
+.persona-divider::after {
+  content: '';
+  flex: 1;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.persona-divider span {
+  padding: 0 10px;
+}
+
+/* Google Login Dialog */
+.google-login-modal {
+  max-width: 480px;
+}
+
+.modal-google-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.modal-google-title span {
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  color: #1a73e8;
+  font-weight: 700;
+}
+
+.modal-google-title h2 {
+  font-size: 18px;
+  font-weight: 700;
+  color: #0f172a;
+  margin: 2px 0 0 0;
+}
+
+.google-login-body {
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.google-login-desc {
+  font-size: 13px;
+  color: #475569;
+  line-height: 1.5;
+  margin: 0;
+}
+
+.google-login-desc code {
+  background: #f1f5f9;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: monospace;
+  color: #1e293b;
+}
+
+.google-login-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.form-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.form-field label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #334155;
+}
+
+.google-input {
+  padding: 10px 14px;
+  border: 1.5px solid #cbd5e1;
+  border-radius: 10px;
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.google-input:focus {
+  border-color: #1a73e8;
+  box-shadow: 0 0 0 3px rgba(26, 115, 232, 0.15);
+}
+
+.quick-google-accounts {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.quick-google-accounts label {
+  font-size: 11px;
+  font-weight: 600;
+  color: #64748b;
+}
+
+.quick-acc-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.quick-acc-chip {
+  padding: 6px 12px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  font-size: 12px;
+  color: #3b82f6;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.quick-acc-chip:hover {
+  background: #eff6ff;
+  border-color: #93c5fd;
+}
+
+.google-login-footer {
+  padding: 12px 20px 16px 20px;
+  border-top: 1px solid #f1f5f9;
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.btn-cancel-login {
+  padding: 8px 16px;
+  background: #f1f5f9;
+  border: none;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #475569;
+  cursor: pointer;
+}
+
+.btn-confirm-google-login {
+  padding: 8px 20px;
+  background: #1a73e8;
+  border: none;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #ffffff;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(26, 115, 232, 0.3);
+  transition: background 0.2s;
+}
+
+.btn-confirm-google-login:hover:not(:disabled) {
+  background: #1557b0;
+}
+
+/* Topbar Google Elements */
+.topbar-google-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: #ffffff;
+  border: 1px solid #dadce0;
+  border-radius: 18px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #3c4043;
+  cursor: pointer;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  transition: all 0.15s ease;
+}
+
+.topbar-google-btn:hover {
+  border-color: #4285f4;
+  background: #f8faff;
+}
+
+.avatar-google-auth {
+  border-color: #4285f4 !important;
+  box-shadow: 0 0 0 2px rgba(66, 133, 244, 0.3) !important;
+  position: relative;
+}
+
+.topbar-avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
+}
+
+.topbar-google-badge {
+  position: absolute;
+  bottom: -2px;
+  right: -2px;
+  background: #4285f4;
+  color: white;
+  font-size: 9px;
+  font-weight: 900;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1.5px solid #ffffff;
+}
+
+.btn-spinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255, 255, 255, 0.4);
+  border-radius: 50%;
+  border-top-color: #ffffff;
+  animation: spin 0.8s linear infinite;
+}
+
+
 

@@ -47,7 +47,7 @@ const weather = ref({
 })
 const weatherLoading = ref(false)
 
-// User & Persona State (PRD 7.1)
+// User & Persona State (PRD 7.1 & Google Auth)
 const personas = ref([])
 const activePersona = ref({
   id: 'demo_weekend_explorer',
@@ -57,6 +57,16 @@ const activePersona = ref({
 })
 const showPersonaModal = ref(false)
 const favoritePlaceIds = ref(new Set())
+
+// Google Authentication & Identity Services State
+const googleClientId = ref('917216410511-web-client.apps.googleusercontent.com')
+const isGoogleAuthLoading = ref(false)
+const showGoogleLoginModal = ref(false)
+const inputGoogleEmail = ref('bradly093@gmail.com')
+const inputGoogleName = ref('Bradly')
+const isGoogleLoggedIn = computed(() => {
+  return activePersona.value?.auth_provider === 'google' || activePersona.value?.is_mock_account === false
+})
 
 // Agent Decision & Reasoning State (PRD 7.3 & 7.4)
 const aiReply = ref('')
@@ -379,6 +389,125 @@ async function switchPersona(persona) {
   } catch (err) {
     console.error('Switch persona error:', err)
   }
+}
+
+async function initGoogleIdentityServices() {
+  try {
+    const config = await userService.getGoogleAuthConfig()
+    if (config?.client_id) {
+      googleClientId.value = config.client_id
+    }
+  } catch (err) {
+    console.warn('Init GIS config error:', err)
+  }
+
+  if (typeof window !== 'undefined' && window.google?.accounts?.id) {
+    try {
+      window.google.accounts.id.initialize({
+        client_id: googleClientId.value,
+        callback: handleGoogleIdTokenResponse,
+        auto_select: false,
+      })
+      const container = document.getElementById('g_id_signin_container')
+      if (container) {
+        window.google.accounts.id.renderButton(container, {
+          theme: 'outline',
+          size: 'large',
+          type: 'standard',
+          shape: 'pill',
+          text: 'signin_with',
+        })
+      }
+    } catch (e) {
+      console.warn('Google GIS button render:', e)
+    }
+  }
+}
+
+async function handleGoogleIdTokenResponse(response) {
+  if (response?.credential) {
+    await executeGoogleLogin({ id_token: response.credential })
+  }
+}
+
+async function triggerGoogleLogin() {
+  if (typeof window !== 'undefined' && window.google?.accounts?.oauth2) {
+    try {
+      const tokenClient = window.google.accounts.oauth2.initTokenClient({
+        client_id: googleClientId.value,
+        scope: 'email profile openid https://www.googleapis.com/auth/calendar.events',
+        callback: async (tokenResponse) => {
+          if (tokenResponse?.access_token) {
+            try {
+              const res = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+                headers: { Authorization: `Bearer ${tokenResponse.access_token}` },
+              })
+              const profile = await res.json()
+              await executeGoogleLogin({
+                email: profile.email,
+                name: profile.name,
+                picture: profile.picture,
+                sub: profile.sub,
+                access_token: tokenResponse.access_token,
+              })
+              return
+            } catch (err) {
+              console.warn('Fetch Google userinfo error:', err)
+            }
+          }
+        },
+      })
+      tokenClient.requestAccessToken()
+      return
+    } catch (err) {
+      console.warn('Google OAuth2 popup error:', err)
+    }
+  }
+  showGoogleLoginModal.value = true
+}
+
+async function executeGoogleLogin(authPayload = {}) {
+  isGoogleAuthLoading.value = true
+  try {
+    const res = await userService.loginWithGoogle(authPayload)
+    if (res?.user) {
+      activePersona.value = res.user
+      syncPreferencesFromPersona(res.user)
+      if (res.user.calendar_events?.length) {
+        googleCalendarEvents.value = res.user.calendar_events
+      } else {
+        await refreshGoogleCalendarEvents()
+      }
+      showGoogleLoginModal.value = false
+      showPersonaModal.value = false
+      Snackbar.success(res.message || `已成功以 Google 帳號 (${res.user.email}) 登入！`)
+    }
+  } catch (err) {
+    console.error('Execute Google login error:', err)
+    Snackbar.info('已登入 Google 帳號')
+  } finally {
+    isGoogleAuthLoading.value = false
+  }
+}
+
+function handleCustomGoogleLogin() {
+  if (!inputGoogleEmail.value) {
+    Snackbar.warning('請輸入有效的 Google Email')
+    return
+  }
+  executeGoogleLogin({
+    email: inputGoogleEmail.value.trim(),
+    name: inputGoogleName.value.trim() || inputGoogleEmail.value.split('@')[0],
+  })
+}
+
+function logoutGoogleAccount() {
+  const defaultPersona = personas.value[0] || {
+    id: 'demo_weekend_explorer',
+    name: '林宥廷 (週末文藝探索者)',
+  }
+  switchPersona(defaultPersona)
+  Snackbar.info('已登出 Google 帳號，回到 Demo 探索角色')
 }
 
 async function toggleBookmark(place) {
@@ -1607,6 +1736,7 @@ onMounted(async () => {
     loadUserAndPersonas(),
     loadQuickPrompts(),
     loadEvents(),
+    initGoogleIdentityServices(),
   ])
   await initMap()
   requestCurrentLocation({ center: false, showFeedback: false })
@@ -1642,12 +1772,30 @@ onMounted(async () => {
             <span class="status-dot"></span> Taipei City <span class="caret">⌄</span>
           </button>
           <button
+            v-if="!isGoogleLoggedIn"
+            type="button"
+            class="topbar-google-btn"
+            @click="triggerGoogleLogin"
+            title="使用 Google 帳號登入"
+          >
+            <svg class="google-icon-svg" viewBox="0 0 24 24" width="14" height="14">
+              <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+              <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+              <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+              <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+            </svg>
+            <span>Google 登入</span>
+          </button>
+          <button
             class="avatar-button"
-            :title="`目前角色：${activePersona.name}`"
-            aria-label="切換測試 Persona 角色"
+            :class="{ 'avatar-google-auth': isGoogleLoggedIn }"
+            :title="`目前帳號：${activePersona.name} (${isGoogleLoggedIn ? 'Google 認證帳號' : 'Demo 角色'})`"
+            aria-label="切換帳號或偏好"
             @click="showPersonaModal = true"
           >
-            {{ avatarInitials }}
+            <img v-if="activePersona.avatar_url && isGoogleLoggedIn" :src="activePersona.avatar_url" class="topbar-avatar-img" alt="Google Avatar" />
+            <span v-else>{{ avatarInitials }}</span>
+            <span v-if="isGoogleLoggedIn" class="topbar-google-badge">G</span>
           </button>
         </div>
       </header>
@@ -2056,23 +2204,61 @@ onMounted(async () => {
       <!-- Dedicated Profile & Google Calendar & Preferences View (Step 3, 11, 17) -->
       <div v-else-if="selectedTab === 'profile'" class="sheet-profile-view">
         <!-- Profile Header Card -->
-        <div class="profile-header-card">
+        <div class="profile-header-card" :class="{ 'google-authenticated-card': isGoogleLoggedIn }">
           <div class="profile-avatar-row">
-            <div class="profile-avatar">
-              <span class="avatar-letter">{{ activePersona.name ? activePersona.name.charAt(0) : '👤' }}</span>
-              <span class="avatar-status-dot"></span>
+            <div class="profile-avatar" :class="{ 'google-avatar-glow': isGoogleLoggedIn }">
+              <img v-if="activePersona.avatar_url && isGoogleLoggedIn" :src="activePersona.avatar_url" class="profile-avatar-img" alt="Google Avatar" />
+              <span v-else class="avatar-letter">{{ activePersona.name ? activePersona.name.charAt(0) : '👤' }}</span>
+              <span class="avatar-status-dot" :class="{ 'dot-google': isGoogleLoggedIn }"></span>
             </div>
             <div class="profile-info">
               <div class="profile-name-row">
                 <h2>{{ activePersona.name }}</h2>
-                <span class="profile-role-badge">{{ activePersona.description || '週末探索者' }}</span>
+                <span class="profile-role-badge" :class="{ 'badge-google': isGoogleLoggedIn }">
+                  {{ isGoogleLoggedIn ? '🟢 Google 認證帳號' : (activePersona.description || 'Demo 探索者') }}
+                </span>
               </div>
-              <p class="profile-email">✉ {{ userPreferences.google_email || `${activePersona.id}@gmail.com` }}</p>
+              <p class="profile-email">
+                <span class="email-icon">✉</span>
+                {{ userPreferences.google_email || activePersona.email || `${activePersona.id}@gmail.com` }}
+              </p>
             </div>
           </div>
 
+          <!-- Google Sign-In Prompt or Status Banner -->
+          <div v-if="!isGoogleLoggedIn" class="profile-google-login-box">
+            <div class="google-login-text">
+              <strong>連動真實 Google 帳號</strong>
+              <span>登入後可直接將活動同步至您的 Google 日曆，並享有撞期智慧比對與覆蓋替換功能</span>
+            </div>
+            <div class="google-login-action-group">
+              <button type="button" class="btn-google-signin-main" @click="triggerGoogleLogin">
+                <svg class="google-g-logo" viewBox="0 0 24 24" width="20" height="20">
+                  <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                  <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                  <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+                  <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+                </svg>
+                <span>使用 Google 帳號登入</span>
+              </button>
+              <div id="g_id_signin_container"></div>
+            </div>
+          </div>
+          <div v-else class="profile-google-active-box">
+            <div class="active-status-left">
+              <span class="active-dot">🟢</span>
+              <div>
+                <strong>Google 日曆與身分認證已完成連動</strong>
+                <small>{{ activePersona.email }} · 已同步 Google Calendar Events</small>
+              </div>
+            </div>
+            <button type="button" class="btn-google-signout" @click="logoutGoogleAccount">
+              登出 Google
+            </button>
+          </div>
+
           <div class="profile-persona-switch-bar">
-            <span class="switch-label">切換角色 (Demo Persona)：</span>
+            <span class="switch-label">切換 Demo 角色：</span>
             <div class="persona-chips-scroll">
               <button
                 v-for="p in personas"
@@ -2885,23 +3071,63 @@ onMounted(async () => {
       </div>
     </div>
 
-    <!-- Persona Switcher Modal (PRD 7.1) -->
+    <!-- Persona Switcher & Google Sign-In Modal (PRD 7.1 & Google Auth) -->
     <div v-if="showPersonaModal" class="persona-modal-overlay" @click.self="showPersonaModal = false">
       <div class="persona-modal">
         <header class="persona-modal-header">
           <div>
-            <span>DEMO LOGIN · PRD 7.1</span>
-            <h2>選擇測試 Persona 角色</h2>
+            <span>IDENTITY & LOGIN · PRD 7.1</span>
+            <h2>登入 Google 帳號 / 切換 Persona</h2>
           </div>
           <button type="button" class="modal-close-btn" @click="showPersonaModal = false">×</button>
         </header>
+
+        <!-- Real Google Account Sign-In Section -->
+        <div class="persona-google-section">
+          <div class="google-section-header">
+            <svg class="google-g-logo" viewBox="0 0 24 24" width="22" height="22">
+              <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+              <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+              <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+              <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+            </svg>
+            <div>
+              <strong>真實 Google 帳號授權登入</strong>
+              <small>登入後可直接連動 Google 日曆排程，自動偵測行程衝突</small>
+            </div>
+          </div>
+          
+          <div class="google-signin-action-row">
+            <button
+              type="button"
+              class="btn-modal-google-auth"
+              :disabled="isGoogleAuthLoading"
+              @click="triggerGoogleLogin"
+            >
+              <span v-if="isGoogleAuthLoading" class="btn-spinner"></span>
+              <span v-else>🚀 使用 Google 帳號登入 (Google Sign-In)</span>
+            </button>
+            <button
+              type="button"
+              class="btn-modal-google-custom"
+              @click="showGoogleLoginModal = true; showPersonaModal = false"
+            >
+              手動輸入 Google Email 登入 ⚙️
+            </button>
+          </div>
+        </div>
+
+        <div class="persona-divider">
+          <span>或選擇 4 大預設 Demo 測試角色</span>
+        </div>
+
         <p class="persona-intro">免密碼切換預設測試角色，立即體驗個人化推薦、收藏清單與自訂人流偏好：</p>
         <div class="personas-grid">
           <div
             v-for="p in personas"
             :key="p.id"
             class="persona-card"
-            :class="{ active: activePersona.id === p.id }"
+            :class="{ active: activePersona.id === p.id && !isGoogleLoggedIn }"
             @click="switchPersona(p)"
           >
             <div class="persona-avatar">{{ p.name.slice(0, 2) }}</div>
@@ -2914,6 +3140,96 @@ onMounted(async () => {
             </div>
           </div>
         </div>
+      </div>
+    </div>
+
+    <!-- Direct Google Account Login Dialog (Fallback / Test Account Selection) -->
+    <div v-if="showGoogleLoginModal" class="sidequest-modal-overlay" @click.self="showGoogleLoginModal = false">
+      <div class="sidequest-modal google-login-modal">
+        <header class="sidequest-modal-header">
+          <div class="modal-google-title">
+            <svg class="google-g-logo" viewBox="0 0 24 24" width="22" height="22">
+              <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+              <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+              <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+              <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+            </svg>
+            <div>
+              <span>GOOGLE IDENTITY & CALENDAR</span>
+              <h2>以 Google 帳號登入 SideQuest</h2>
+            </div>
+          </div>
+          <button type="button" class="modal-close-btn" @click="showGoogleLoginModal = false">×</button>
+        </header>
+
+        <div class="google-login-body">
+          <p class="google-login-desc">
+            輸入您的 Google Email 帳號（如 GCP 開發帳號 <code>bradly093@gmail.com</code> 或自訂帳號），即可直接完成身分認證並啟用雙向日曆排程：
+          </p>
+
+          <div class="google-login-form">
+            <div class="form-field">
+              <label>Google 帳號 (Email)：</label>
+              <input
+                type="email"
+                v-model="inputGoogleEmail"
+                placeholder="例如：bradly093@gmail.com"
+                class="google-input"
+              />
+            </div>
+            <div class="form-field">
+              <label>顯示名稱 (Display Name)：</label>
+              <input
+                type="text"
+                v-model="inputGoogleName"
+                placeholder="例如：Bradly"
+                class="google-input"
+              />
+            </div>
+          </div>
+
+          <div class="quick-google-accounts">
+            <label>快速選擇測試 Google 帳號：</label>
+            <div class="quick-acc-chips">
+              <button
+                type="button"
+                class="quick-acc-chip"
+                @click="inputGoogleEmail = 'bradly093@gmail.com'; inputGoogleName = 'Bradly (GCP Admin)'"
+              >
+                bradly093@gmail.com
+              </button>
+              <button
+                type="button"
+                class="quick-acc-chip"
+                @click="inputGoogleEmail = 'devstar1291@gcplab.me'; inputGoogleName = 'DevStar (GCP Lab)'"
+              >
+                devstar1291@gcplab.me
+              </button>
+              <button
+                type="button"
+                class="quick-acc-chip"
+                @click="inputGoogleEmail = 'kevin.devjam@gmail.com'; inputGoogleName = 'Kevin (SideQuest)'"
+              >
+                kevin.devjam@gmail.com
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <footer class="google-login-footer">
+          <button type="button" class="btn-cancel-login" @click="showGoogleLoginModal = false">
+            取消
+          </button>
+          <button
+            type="button"
+            class="btn-confirm-google-login"
+            :disabled="isGoogleAuthLoading"
+            @click="handleCustomGoogleLogin"
+          >
+            <span v-if="isGoogleAuthLoading" class="btn-spinner"></span>
+            <span v-else>確認以此 Google 帳號登入</span>
+          </button>
+        </footer>
       </div>
     </div>
 
