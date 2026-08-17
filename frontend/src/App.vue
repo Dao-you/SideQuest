@@ -21,8 +21,10 @@ const eventsError = ref('')
 const aiReply = ref('')
 const aiError = ref('')
 const agentToolCalls = ref([])
+const detailPlaceId = ref('')
 const selectedTab = ref('discover')
 const sheetExpanded = ref(false)
+const sheetMinimized = ref(false)
 const sheetDragging = ref(false)
 const sheetDragHeight = ref(null)
 const markers = new Map()
@@ -41,6 +43,11 @@ const agentServiceLabel = agentService.label
 const sheetStyle = computed(() => sheetDragHeight.value
   ? { '--sheet-height': `${sheetDragHeight.value}px` }
   : undefined)
+const sheetHandleLabel = computed(() => {
+  if (sheetMinimized.value) return '向上展開探索'
+  if (sheetExpanded.value) return '向下回到半高'
+  return '向上展開 · 下滑收到底'
+})
 
 async function loadEvents() {
   eventsLoading.value = true
@@ -58,6 +65,7 @@ async function loadEvents() {
 }
 
 const selectedPlace = computed(() => places.value.find((place) => place.id === activePlaceId.value) ?? places.value[0])
+const detailPlace = computed(() => places.value.find((place) => place.id === detailPlaceId.value) ?? null)
 const agentRecommendedPlaces = computed(() => agentToolCalls.value
   .map((toolCall) => {
     const place = places.value.find((item) => item.id === toolCall.event_id)
@@ -84,9 +92,9 @@ function crowdClass(score) {
 }
 
 function syncMarkerSelection() {
-  markers.forEach((marker, id) => {
-    marker.content?.classList.toggle('is-active', id === activePlaceId.value)
-    marker.zIndex = id === activePlaceId.value ? 100 : 1
+  markers.forEach((markerRecord, id) => {
+    markerRecord.content?.classList.toggle('is-active', id === activePlaceId.value)
+    if (markerRecord.content) markerRecord.content.style.zIndex = id === activePlaceId.value ? '100' : '1'
   })
 }
 
@@ -105,15 +113,22 @@ function buildMapInfoContent(place) {
   meta.className = 'map-info-card__meta'
   meta.textContent = `${crowdLabel(place.crowd)}人流 · 曝曬 ${place.sun}%`
 
-  content.append(eyebrow, title, meta)
+  const action = document.createElement('button')
+  action.className = 'map-info-card__action'
+  action.type = 'button'
+  action.textContent = '查看活動詳情 →'
+  action.addEventListener('click', () => openPlaceDetails(place))
+
+  content.append(eyebrow, title, meta, action)
   return content
 }
 
-function showMapInfo(place, marker) {
-  if (!map.value || !marker || !window.google?.maps) return
+function showMapInfo(place, markerRecord) {
+  if (!map.value || !markerRecord || !window.google?.maps) return
   mapInfoWindow ??= new window.google.maps.InfoWindow({ disableAutoPan: true })
   mapInfoWindow.setContent(buildMapInfoContent(place))
-  mapInfoWindow.open({ map: map.value, anchor: marker })
+  mapInfoWindow.setPosition(place.position)
+  mapInfoWindow.open({ map: map.value, shouldFocus: false })
 }
 
 function selectPlace(place) {
@@ -127,9 +142,57 @@ function selectPlace(place) {
   }
 }
 
+async function openPlaceDetails(place) {
+  detailPlaceId.value = place.id
+  sheetExpanded.value = false
+  sheetMinimized.value = false
+  selectPlace(place)
+  await nextTick()
+  sheetElement.value?.scrollTo({ top: 0, behavior: 'smooth' })
+}
+
+async function closePlaceDetails() {
+  detailPlaceId.value = ''
+  await nextTick()
+  sheetElement.value?.scrollTo({ top: 0, behavior: 'smooth' })
+}
+
+function showRouteComingSoon() {
+  Snackbar.info('路線規劃按鈕已預留，等待後端服務接上')
+}
+
+function revealPlaceOnMap(place) {
+  selectPlace(place)
+  minimizeSheet()
+}
+
+function showSaveComingSoon() {
+  Snackbar.info('已替收藏功能保留前端入口')
+}
+
 function toggleSheet() {
-  sheetExpanded.value = !sheetExpanded.value
+  if (sheetMinimized.value) {
+    sheetMinimized.value = false
+    sheetExpanded.value = false
+  } else if (sheetExpanded.value) {
+    sheetExpanded.value = false
+  } else {
+    sheetExpanded.value = true
+  }
   sheetDragHeight.value = null
+}
+
+function minimizeSheet() {
+  sheetExpanded.value = false
+  sheetMinimized.value = true
+  sheetDragHeight.value = null
+}
+
+function getSheetSnapHeights() {
+  const minimized = window.innerWidth <= 620 ? 106 : 72
+  const half = Math.min(560, Math.max(340, window.innerHeight * 0.46))
+  const expanded = Math.max(half, window.innerHeight * 0.88)
+  return { minimized, half, expanded }
 }
 
 function startSheetDrag(event) {
@@ -142,9 +205,8 @@ function startSheetDrag(event) {
 
 function moveSheetDrag(event) {
   if (!sheetDragging.value) return
-  const minHeight = Math.min(560, Math.max(340, window.innerHeight * 0.46))
-  const maxHeight = Math.max(minHeight, window.innerHeight * 0.88)
-  sheetDragHeight.value = Math.min(maxHeight, Math.max(minHeight, sheetDragStartHeight + sheetDragStartY - event.clientY))
+  const { minimized, expanded } = getSheetSnapHeights()
+  sheetDragHeight.value = Math.min(expanded, Math.max(minimized, sheetDragStartHeight + sheetDragStartY - event.clientY))
 }
 
 function endSheetDrag(event) {
@@ -152,9 +214,17 @@ function endSheetDrag(event) {
   sheetDragging.value = false
   event.currentTarget.releasePointerCapture?.(event.pointerId)
   const currentHeight = sheetDragHeight.value ?? sheetDragStartHeight
-  const minHeight = Math.min(560, Math.max(340, window.innerHeight * 0.46))
-  const maxHeight = Math.max(minHeight, window.innerHeight * 0.88)
-  sheetExpanded.value = currentHeight > (minHeight + maxHeight) / 2
+  const { minimized, half, expanded } = getSheetSnapHeights()
+  if (currentHeight < (minimized + half) / 2) {
+    sheetMinimized.value = true
+    sheetExpanded.value = false
+  } else if (currentHeight < (half + expanded) / 2) {
+    sheetMinimized.value = false
+    sheetExpanded.value = false
+  } else {
+    sheetMinimized.value = false
+    sheetExpanded.value = true
+  }
   sheetDragHeight.value = null
 }
 
@@ -183,6 +253,7 @@ async function explore() {
     const firstRecommendedId = agentToolCalls.value[0]?.event_id ?? places.value[0]?.id
     const firstRecommendedPlace = places.value.find((place) => place.id === firstRecommendedId)
     if (firstRecommendedPlace) selectPlace(firstRecommendedPlace)
+    sheetMinimized.value = false
     sheetExpanded.value = true
     await nextTick()
     document.querySelector('.agent-tool-results')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
@@ -201,10 +272,13 @@ function centerMap() {
   map.value.setZoom(12)
 }
 
-async function addMarker(place, AdvancedMarkerElement) {
+function addMarker(place) {
   const content = document.createElement('div')
   content.className = 'map-place-marker'
   content.style.setProperty('--pin-color', place.color)
+  content.setAttribute('role', 'button')
+  content.setAttribute('tabindex', '0')
+  content.setAttribute('aria-label', `查看 ${place.name}`)
 
   const pin = document.createElement('span')
   pin.className = 'map-place-marker__pin'
@@ -217,16 +291,25 @@ async function addMarker(place, AdvancedMarkerElement) {
   label.textContent = place.shortName
   content.append(pin, label)
 
-  const marker = new AdvancedMarkerElement({
-    map: map.value,
-    position: place.position,
-    title: place.name,
-    content,
-    gmpClickable: true,
-    zIndex: 1,
+  const overlay = new window.google.maps.OverlayView()
+  overlay.onAdd = () => overlay.getPanes().overlayMouseTarget.appendChild(content)
+  overlay.draw = () => {
+    const point = overlay.getProjection().fromLatLngToDivPixel(place.position)
+    if (!point) return
+    content.style.left = `${point.x}px`
+    content.style.top = `${point.y}px`
+  }
+  overlay.onRemove = () => content.remove()
+  overlay.setMap(map.value)
+
+  content.addEventListener('click', () => openPlaceDetails(place))
+  content.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault()
+      openPlaceDetails(place)
+    }
   })
-  marker.addEventListener('gmp-click', () => selectPlace(place))
-  markers.set(place.id, marker)
+  markers.set(place.id, { content, overlay })
 }
 
 async function initMap() {
@@ -249,11 +332,10 @@ async function initMap() {
       minZoom: 11,
       maxZoom: 17,
       disableDefaultUI: true,
-      clickableIcons: false,
+      clickableIcons: true,
       gestureHandling: 'greedy',
     })
-    const { AdvancedMarkerElement } = await window.google.maps.importLibrary('marker')
-    await Promise.all(places.value.map((place) => addMarker(place, AdvancedMarkerElement)))
+    places.value.forEach(addMarker)
     syncMarkerSelection()
     mapState.value = 'ready'
   } catch (error) {
@@ -271,7 +353,7 @@ onMounted(async () => {
 </script>
 
 <template>
-  <main class="app-shell" :class="{ 'sheet-expanded': sheetExpanded }">
+  <main class="app-shell" :class="{ 'sheet-expanded': sheetExpanded, 'sheet-minimized': sheetMinimized }">
     <section class="map-stage" aria-label="台北市地圖">
       <div ref="mapElement" class="google-map"></div>
       <div v-if="mapState === 'loading'" class="map-state map-loading">
@@ -321,23 +403,90 @@ onMounted(async () => {
     <section
       ref="sheetElement"
       class="bottom-sheet"
-      :class="{ expanded: sheetExpanded, dragging: sheetDragging }"
+      :class="{ expanded: sheetExpanded, minimized: sheetMinimized, dragging: sheetDragging }"
       :style="sheetStyle"
       aria-label="SideQuest 探索面板"
     >
-      <button
-        class="sheet-grabber"
-        type="button"
-        :aria-label="sheetExpanded ? '收合探索面板' : '展開探索面板'"
-        @click="toggleSheet"
-        @pointerdown="startSheetDrag"
-        @pointermove="moveSheetDrag"
-        @pointerup="endSheetDrag"
-        @pointercancel="endSheetDrag"
-      >
-        <span class="sheet-handle"></span>
-        <small>{{ sheetExpanded ? '向下收合地圖' : '向上展開探索' }}</small>
-      </button>
+      <div class="sheet-grabber">
+        <button
+          class="sheet-grabber-control"
+          type="button"
+          :aria-label="sheetHandleLabel"
+          @click="toggleSheet"
+          @pointerdown="startSheetDrag"
+          @pointermove="moveSheetDrag"
+          @pointerup="endSheetDrag"
+          @pointercancel="endSheetDrag"
+        >
+          <span class="sheet-handle"></span>
+          <small>{{ sheetHandleLabel }}</small>
+        </button>
+        <button
+          v-if="!sheetMinimized"
+          class="sheet-minimize-button"
+          type="button"
+          aria-label="將探索面板收到底"
+          @click="minimizeSheet"
+        >⌄</button>
+      </div>
+
+      <article v-if="detailPlace" class="place-detail-view">
+        <header class="detail-header">
+          <button type="button" class="detail-back" aria-label="返回活動列表" @click="closePlaceDetails">←</button>
+          <span>ACTIVITY DETAIL · {{ detailPlace.label }}</span>
+          <button type="button" class="detail-close" aria-label="關閉詳細資料" @click="closePlaceDetails">×</button>
+        </header>
+
+        <div class="detail-hero" :style="{ '--detail-color': detailPlace.color }">
+          <div class="detail-hero-pin">{{ detailPlace.label }}</div>
+          <div class="detail-hero-copy">
+            <span>{{ detailPlace.category }}</span>
+            <h1>{{ detailPlace.name }}</h1>
+            <strong>{{ detailPlace.address || '台北市活動場地' }}</strong>
+            <small>{{ detailPlace.dateRange }}</small>
+          </div>
+        </div>
+
+        <nav class="detail-quick-actions" aria-label="活動動作">
+          <button type="button" class="primary" @click="showRouteComingSoon">
+            <span aria-hidden="true">⌁</span><strong>規劃路線</strong>
+          </button>
+          <button type="button" @click="revealPlaceOnMap(detailPlace)">
+            <span aria-hidden="true">⌖</span><strong>查看地圖</strong>
+          </button>
+          <button type="button" @click="showSaveComingSoon">
+            <span aria-hidden="true">♡</span><strong>收藏</strong>
+          </button>
+          <a v-if="detailPlace.sourceUrl" :href="detailPlace.sourceUrl" target="_blank" rel="noopener noreferrer">
+            <span aria-hidden="true">↗</span><strong>活動來源</strong>
+          </a>
+        </nav>
+
+        <div class="detail-status-grid">
+          <div><span>♧</span><small>目前人流</small><strong>{{ crowdLabel(detailPlace.crowd) }} · {{ detailPlace.crowd }}</strong></div>
+          <div><span>◒</span><small>曝曬程度</small><strong>{{ detailPlace.sun }}%</strong></div>
+          <div><span>◷</span><small>預估距離</small><strong>{{ detailPlace.distance }}</strong></div>
+        </div>
+
+        <section class="detail-section">
+          <div class="detail-section-heading"><span>01</span><h2>活動資訊</h2></div>
+          <dl class="detail-facts">
+            <div><dt>日期</dt><dd>{{ detailPlace.dateRange }}</dd></div>
+            <div><dt>重點時間</dt><dd>{{ detailPlace.time }}</dd></div>
+            <div><dt>費用</dt><dd>{{ detailPlace.fee || '請見活動來源' }}</dd></div>
+            <div><dt>主辦單位</dt><dd>{{ detailPlace.organizer || '活動主辦方' }}</dd></div>
+          </dl>
+        </section>
+
+        <section class="detail-section">
+          <div class="detail-section-heading"><span>02</span><h2>為什麼值得去</h2></div>
+          <p>{{ detailPlace.description }}</p>
+          <div v-if="detailPlace.admission" class="detail-tip"><span>↳</span><div><strong>入場方式</strong><p>{{ detailPlace.admission }}</p></div></div>
+        </section>
+
+      </article>
+
+      <div v-else class="sheet-discover-view">
       <div class="sheet-header">
         <div>
           <p class="eyebrow"><span class="eyebrow-dot"></span> 你的城市 Agent</p>
@@ -392,7 +541,7 @@ onMounted(async () => {
             :key="`agent-${place.id}`"
             class="agent-pick-card"
             :class="{ selected: activePlaceId === place.id }"
-            @click="selectPlace(place)"
+            @click="openPlaceDetails(place)"
           >
             <div class="agent-pick-rank">0{{ index + 1 }}</div>
             <div class="agent-pick-main">
@@ -439,7 +588,7 @@ onMounted(async () => {
           :key="place.id"
           class="place-card"
           :class="{ selected: activePlaceId === place.id }"
-          @click="selectPlace(place)"
+          @click="openPlaceDetails(place)"
         >
           <div class="place-number">0{{ index + 1 }}</div>
           <div class="place-main">
@@ -472,6 +621,7 @@ onMounted(async () => {
         <div class="note-icon">↝</div>
         <div><strong>SideQuest 建議你繞一點路</strong><span>松菸目前人流較高，華山只要多 7 分鐘但舒適度高 32%。</span></div>
         <span class="note-sparkle">✦</span>
+      </div>
       </div>
     </section>
 
