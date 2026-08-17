@@ -22,7 +22,7 @@ substitutions:
   _REGION: asia-east1
   _REPOSITORY: sidequest
   _IMAGE_NAME: frontend
-  _MAPS_API_KEY: ""
+  _MAPS_API_KEY: "AIzaSyBvHetpB7ilLcNSJXeecfVgaLQ7b3TGobY"
   _API_BASE_URL: /api/v1
   _EVENT_SOURCE: api
   _AGENT_SOURCE: agent
