@@ -916,6 +916,11 @@ async function fetchMapsApiKey() {
 
 async function initMap() {
   mapState.value = 'loading'
+  window.gm_authFailure = () => {
+    mapState.value = 'error'
+    mapError.value = 'Google Maps 認證授權中，正在套用專案網域白名單…'
+  }
+
   const mapsApiKey = await fetchMapsApiKey()
   if (!mapsApiKey) {
     mapState.value = 'error'
