@@ -1237,8 +1237,8 @@ onMounted(async () => {
 
       <!-- Topbar Header -->
       <header class="topbar">
-        <div class="brand-lockup">
-          <div class="brand-mark">SQ</div>
+        <div class="brand-lockup" aria-label="SideQuest 城市探索">
+          <img class="brand-mark" src="/brand/sidequest-mark.png" alt="SideQuest 圖形標誌" />
           <div>
             <div class="brand-name">sidequest<span>.</span></div>
             <div class="brand-caption">城市裡的下一站</div>
