@@ -46,7 +46,8 @@ async def get_quick_prompts(
     summary="Agent 即時思考與推薦串流 (SSE)",
     description=(
         "透過 Server-Sent Events (SSE) 串流輸出 Agent 的思考步驟 (thought)、"
-        "意圖確認 (understanding)、工具調用 (tool_call / tool_result)、Markdown 文字區塊 (markdown_chunk) 以及 3 大推薦卡片 (recommendation_cards)。"
+        "意圖確認 (understanding，包含 normalized requested_date)、工具調用 (tool_call / tool_result)、"
+        "Markdown 文字區塊 (markdown_chunk) 以及 3 大推薦卡片 (recommendation_cards)。"
     ),
 )
 async def chat_stream(
@@ -77,7 +78,8 @@ async def chat_stream(
     "/chat",
     response_model=ChatResponse,
     summary="Agent 同步對話端點 (Non-streaming)",
-    description="傳入使用者自然語言查詢，直接回傳完整 Agent 回覆、結構化條件、思考步驟及 3 大推薦卡片列表。",
+    description="傳入包含日期、時間、約會情境與活動偏好的自然語言查詢，直接回傳完整 Agent 回覆、"
+    "結構化日期條件、思考步驟及 3 大推薦卡片列表；指定日期會篩選活動日期／時段交集。",
 )
 async def chat_sync(
     request: ChatRequest,

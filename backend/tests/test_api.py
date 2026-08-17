@@ -42,6 +42,11 @@ async def test_events_endpoints(async_client: AsyncClient):
     assert res_detail.status_code == 200
     assert res_detail.json()["id"] == event_id
 
+    # Date window is exposed in Swagger-backed query parameters.
+    res_date = await async_client.get("/api/v1/events?start_date=2026-08-22&end_date=2026-08-22&limit=100")
+    assert res_date.status_code == 200
+    assert len(res_date.json()) > 0
+
 
 @pytest.mark.asyncio
 async def test_crowd_and_heatmap_endpoints(async_client: AsyncClient):
@@ -100,6 +105,15 @@ async def test_agent_endpoints(async_client: AsyncClient):
     assert res_rec.status_code == 200
     rec_data = res_rec.json()
     assert len(rec_data["recommendations"]) == 3
+
+    date_chat = await async_client.post(
+        "/api/v1/agent/chat",
+        json={"message": "2026年8月22日下午想和另一半約會，看展再喝咖啡"},
+    )
+    assert date_chat.status_code == 200
+    date_data = date_chat.json()
+    assert date_data["parsed_criteria"]["requested_date"] == "2026-08-22"
+    assert date_data["parsed_criteria"]["occasion"] == "約會"
 
 
 @pytest.mark.asyncio

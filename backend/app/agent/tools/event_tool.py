@@ -37,6 +37,26 @@ class EventTool(BaseTool):
                 "type": "boolean",
                 "description": "是否具備冷氣空調設施",
             },
+            "start_date": {
+                "type": "string",
+                "format": "date",
+                "description": "指定活動開始日期（YYYY-MM-DD，台北時區）",
+            },
+            "end_date": {
+                "type": "string",
+                "format": "date",
+                "description": "指定活動結束日期（YYYY-MM-DD，台北時區）",
+            },
+            "start_time": {
+                "type": "string",
+                "format": "time",
+                "description": "指定當日開始時間（HH:MM，台北時區）",
+            },
+            "end_time": {
+                "type": "string",
+                "format": "time",
+                "description": "指定當日結束時間（HH:MM，台北時區）",
+            },
             "limit": {
                 "type": "integer",
                 "description": "回傳最大筆數 (預設 8 筆)",
@@ -52,6 +72,10 @@ class EventTool(BaseTool):
         district: Optional[str] = None,
         is_indoor: Optional[bool] = None,
         ac_available: Optional[bool] = None,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        start_time: Optional[str] = None,
+        end_time: Optional[str] = None,
         limit: int = 8,
         **kwargs: Any,
     ) -> Dict[str, Any]:
@@ -63,6 +87,10 @@ class EventTool(BaseTool):
             district=district,
             is_indoor=is_indoor,
             ac_available=ac_available,
+            start_date=start_date,
+            end_date=end_date,
+            start_time=start_time,
+            end_time=end_time,
             limit=limit,
         )
         events = await service.get_events(filter_params)
@@ -86,6 +114,8 @@ class EventTool(BaseTool):
                 "longitude": e.location.longitude,
                 "mrt_station": e.location.mrt_station,
                 "description": e.description[:120] + "..." if len(e.description) > 120 else e.description,
+                "start_time": e.start_time,
+                "end_time": e.end_time,
             })
 
         return {

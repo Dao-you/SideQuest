@@ -190,6 +190,7 @@ button { cursor: pointer; }
 /* Parsed Intent Tags */
 .parsed-criteria-row { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
 .criteria-badge { padding: 3px 8px; border-radius: 99px; font-size: 9px; font-weight: 650; color: #4b6b55; background: #dfeada; }
+.criteria-date-badge { color: #506b78; background: #dcecf0; }
 
 /* Collapsible Thought Steps Trace */
 .agent-thought-container { margin-top: 10px; border: 1px solid #d5e4cf; border-radius: 12px; background: rgba(255, 255, 252, .75); overflow: hidden; }
@@ -210,6 +211,7 @@ button { cursor: pointer; }
 
 .rec-card { padding: 15px 16px; border-radius: 17px; background: #fffefa; border: 1px solid #d8e4d4; box-shadow: 0 6px 20px rgba(60, 85, 65, .05); cursor: pointer; transition: transform .2s ease, box-shadow .2s ease, border-color .2s ease; }
 .rec-card:hover { transform: translateY(-2px); box-shadow: 0 10px 28px rgba(60, 85, 65, .1); border-color: #a4c4a4; }
+.rec-card-date { margin-top: 5px; color: #708477; font-size: 10px; font-weight: 650; }
 .rec-card.role-top_match { border-left: 5px solid #3c6254; }
 .rec-card.role-dispersal_alternative { border-left: 5px solid #77a58d; background: #fafcf7; }
 .rec-card.role-exploration_gem { border-left: 5px solid #d9a441; }

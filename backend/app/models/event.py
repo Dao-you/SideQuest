@@ -1,5 +1,6 @@
 """Event and Recommendation Pydantic Models."""
 
+from datetime import date, time
 from enum import Enum
 from typing import List, Optional
 from pydantic import BaseModel, Field
@@ -122,5 +123,9 @@ class EventFilter(BaseModel):
     keyword: Optional[str] = None
     min_rating: Optional[float] = None
     max_crowd: Optional[int] = None
+    start_date: Optional[date] = Field(default=None, description="Only events overlapping this local Taipei date (inclusive)")
+    end_date: Optional[date] = Field(default=None, description="Only events overlapping this local Taipei date (inclusive)")
+    start_time: Optional[time] = Field(default=None, description="Optional local Taipei time window start")
+    end_time: Optional[time] = Field(default=None, description="Optional local Taipei time window end")
     limit: int = Field(default=20, ge=1, le=100)
     offset: int = Field(default=0, ge=0)

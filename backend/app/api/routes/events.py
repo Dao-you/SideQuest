@@ -1,5 +1,6 @@
 """Events Management and Discovery Routes using EventServiceInterface."""
 
+from datetime import date, time
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 
@@ -22,6 +23,10 @@ async def list_events(
     is_indoor: Optional[bool] = Query(None, description="是否為室內活動"),
     ac_available: Optional[bool] = Query(None, description="是否具備冷氣空調"),
     keyword: Optional[str] = Query(None, description="關鍵字搜尋"),
+    start_date: Optional[date] = Query(None, description="指定活動日期（台北時區，與活動日期區間有交集即可）"),
+    end_date: Optional[date] = Query(None, description="指定活動結束日期（台北時區）"),
+    start_time: Optional[time] = Query(None, description="指定當日開始時間（台北時區）"),
+    end_time: Optional[time] = Query(None, description="指定當日結束時間（台北時區）"),
     limit: int = Query(20, ge=1, le=100, description="單次查詢最大筆數"),
     offset: int = Query(0, ge=0, description="分頁位移量"),
     event_service: EventServiceInterface = Depends(get_event_service_dep),
@@ -33,6 +38,10 @@ async def list_events(
         is_indoor=is_indoor,
         ac_available=ac_available,
         keyword=keyword,
+        start_date=start_date,
+        end_date=end_date,
+        start_time=start_time,
+        end_time=end_time,
         limit=limit,
         offset=offset,
     )
