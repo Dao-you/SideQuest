@@ -176,6 +176,18 @@ $env:VITE_GOOGLE_MAPS_API_KEY = '<your browser-restricted key>'
 npm run dev
 ```
 
+#### PWA 與離線快取
+
+Production build 會註冊 `frontend/public/sw.js`，可在支援的瀏覽器中透過畫面上的「安裝 App」加入手機主畫面；iOS 請使用 Safari 的「加入主畫面」。Vite 產出的 JS/CSS、品牌圖示、活動 CSV 與 App shell 會快取，導覽頁面採 network-first；API、Google Maps 與登入請求不會被 service worker 快取。
+
+```powershell
+cd frontend
+npm run build
+npm run preview
+```
+
+請用 HTTPS 或 `localhost` 開啟 preview 網址測試安裝與離線行為。
+
 若要預覽未來 backend adapter 的介面，改用 `VITE_EVENT_SOURCE=api` 或 `VITE_AGENT_SOURCE=http`，並設定對應的 `VITE_EVENTS_API_URL` / `VITE_AGENT_API_URL`；目前 demo 不需要 backend 才能操作。
 
 部署 Cloud Run 時，請用 gcloud 取得受限 API key 後透過 Cloud Build substitution 注入，不要把 key 寫進 repository：

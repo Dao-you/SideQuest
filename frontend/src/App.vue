@@ -1,5 +1,5 @@
 <script setup>
-import { computed, h, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, h, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { Loader } from '@googlemaps/js-api-loader'
 import { Badge, Button, Chip, Input, Progress, Snackbar } from '@varlet/ui'
 import { createEventDataSource } from './data/eventDataSource'
@@ -9,6 +9,7 @@ import { weatherService } from './services/weatherService'
 import { crowdService } from './services/crowdService'
 import { applyShadeScenarioToGoogleRoute, routesService } from './services/routesService'
 import { userService } from './services/userService'
+import { isPwaInstallable, isPwaStandalone, promptPwaInstall } from './pwa'
 
 const uiIconPaths = {
   accessibility: ['M12 5a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z', 'M9 8h6', 'M12 7v5', 'm12 12-4 8', 'm12 12 5 8', 'M7 14h10'],
@@ -72,6 +73,32 @@ const sheetExpanded = ref(false)
 const sheetMinimized = ref(false)
 const sheetDragging = ref(false)
 const sheetDragHeight = ref(null)
+const canInstallPwa = ref(false)
+const isStandalonePwa = ref(false)
+const isOffline = ref(typeof navigator !== 'undefined' ? !navigator.onLine : false)
+
+function syncPwaInstallState() {
+  canInstallPwa.value = !isStandalonePwa.value && isPwaInstallable()
+}
+
+async function installPwa() {
+  const installed = await promptPwaInstall()
+  syncPwaInstallState()
+  if (installed) Snackbar.success('SideQuest 已加入主畫面')
+}
+
+function handlePwaInstalled() {
+  isStandalonePwa.value = true
+  canInstallPwa.value = false
+}
+
+function handlePwaInstallable() {
+  syncPwaInstallState()
+}
+
+function handleOnlineState() {
+  isOffline.value = !navigator.onLine
+}
 
 // Weather & Microclimate State
 const weather = ref({
@@ -1843,6 +1870,13 @@ async function initMap() {
 }
 
 onMounted(async () => {
+  isStandalonePwa.value = isPwaStandalone()
+  syncPwaInstallState()
+  window.addEventListener('sidequest:pwa-installable', handlePwaInstallable)
+  window.addEventListener('sidequest:pwa-installed', handlePwaInstalled)
+  window.addEventListener('online', handleOnlineState)
+  window.addEventListener('offline', handleOnlineState)
+
   await Promise.all([
     loadWeather(),
     loadUserAndPersonas(),
@@ -1852,6 +1886,13 @@ onMounted(async () => {
   ])
   await initMap()
   requestCurrentLocation({ center: false, showFeedback: false })
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('sidequest:pwa-installable', handlePwaInstallable)
+  window.removeEventListener('sidequest:pwa-installed', handlePwaInstalled)
+  window.removeEventListener('online', handleOnlineState)
+  window.removeEventListener('offline', handleOnlineState)
 })
 </script>
 
@@ -1880,6 +1921,16 @@ onMounted(async () => {
           </div>
         </div>
         <div class="topbar-actions">
+          <button
+            v-if="canInstallPwa"
+            type="button"
+            class="pwa-install-button"
+            aria-label="將 SideQuest 安裝到主畫面"
+            @click="installPwa"
+          >
+            <span aria-hidden="true">＋</span> 安裝 App
+          </button>
+          <span v-if="isOffline" class="pwa-offline-pill" role="status">離線模式</span>
           <button class="city-pill" @click="centerMap" aria-label="切換城市或置中">
             <span class="status-dot"></span> 台北市 <span class="caret">⌄</span>
           </button>

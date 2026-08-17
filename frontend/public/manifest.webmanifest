@@ -1,0 +1,27 @@
+{
+  "name": "SideQuest · 城市探險 Agent",
+  "short_name": "SideQuest",
+  "description": "根據現在的你與現在的城市狀態，找到最適合去的地方。",
+  "lang": "zh-Hant",
+  "dir": "ltr",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "theme_color": "#f5f3ee",
+  "background_color": "#f5f3ee",
+  "icons": [
+    {
+      "src": "/icons/sidequest-icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icons/sidequest-icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

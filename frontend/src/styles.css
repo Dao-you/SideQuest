@@ -32,6 +32,10 @@ button { cursor: pointer; }
 .brand-name span { color: var(--orange); }
 .brand-caption { margin-top: 6px; color: #5e7165; font-size: 10px; font-weight: 650; letter-spacing: .12em; }
 .topbar-actions { display: flex; align-items: center; gap: 10px; }
+.pwa-install-button { display: inline-flex; align-items: center; gap: 4px; min-height: 38px; padding: 0 13px; border: 1px solid rgba(60, 98, 84, .22); border-radius: 99px; color: #355947; background: rgba(239, 248, 232, .92); font-size: 12px; font-weight: 750; box-shadow: 0 8px 22px rgba(54, 72, 52, .08); transition: transform .2s ease, background .2s ease; }
+.pwa-install-button:hover { transform: translateY(-1px); background: #e4f2dc; }
+.pwa-install-button span { font-size: 17px; line-height: 1; }
+.pwa-offline-pill { display: inline-flex; align-items: center; min-height: 38px; padding: 0 12px; border: 1px solid rgba(190, 122, 73, .2); border-radius: 99px; color: #9a623d; background: rgba(255, 242, 227, .92); font-size: 11px; font-weight: 750; }
 .city-pill { display: flex; align-items: center; gap: 8px; min-height: 38px; padding: 0 14px; border: 1px solid rgba(47, 67, 53, .12); border-radius: 99px; color: #506258; background: rgba(250, 251, 245, .78); backdrop-filter: blur(14px); font-size: 12px; font-weight: 650; box-shadow: 0 8px 22px rgba(54, 72, 52, .07); }
 .status-dot, .pulse-dot, .eyebrow-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #8bc46d; box-shadow: 0 0 0 4px rgba(139, 196, 109, .16); }
 .caret { margin-left: 2px; color: #98a29a; font-size: 15px; }
@@ -446,6 +450,8 @@ button { cursor: pointer; }
   .brand-mark { width: 34px; height: 34px; border-radius: 11px; font-size: 10px; }
   .brand-name { font-size: 17px; }
   .brand-caption { font-size: 8px; }
+  .pwa-install-button { width: 32px; min-height: 32px; padding: 0; justify-content: center; font-size: 0; }
+  .pwa-offline-pill { width: 32px; min-height: 32px; padding: 0; justify-content: center; font-size: 0; }
   .city-pill { min-height: 32px; padding: 0 10px; font-size: 10px; }
   .avatar-button { width: 32px; height: 32px; font-size: 10px; }
   .map-context-pill { top: 76px; left: 18px; padding: 7px 9px; gap: 7px; }
