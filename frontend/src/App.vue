@@ -20,6 +20,7 @@ const eventsLoading = ref(true)
 const eventsError = ref('')
 const aiReply = ref('')
 const aiError = ref('')
+const agentToolCalls = ref([])
 const selectedTab = ref('discover')
 const sheetExpanded = ref(false)
 const sheetDragging = ref(false)
@@ -57,6 +58,12 @@ async function loadEvents() {
 }
 
 const selectedPlace = computed(() => places.value.find((place) => place.id === activePlaceId.value) ?? places.value[0])
+const agentRecommendedPlaces = computed(() => agentToolCalls.value
+  .map((toolCall) => {
+    const place = places.value.find((item) => item.id === toolCall.event_id)
+    return place ? { ...place, agentReason: toolCall.reason, agentTool: toolCall.tool } : null
+  })
+  .filter(Boolean))
 const visiblePlaces = computed(() => {
   if (activeFilter.value === '低人流') return [...places.value].sort((a, b) => a.crowd - b.crowd)
   if (activeFilter.value === '室內避暑') return places.value.filter((place) => place.isIndoor || place.sun < 40)
@@ -165,11 +172,20 @@ async function explore() {
   isExploring.value = true
   aiReply.value = ''
   aiError.value = ''
+  agentToolCalls.value = []
   try {
     const result = await agentService.recommend({ message: prompt.value.trim(), events: places.value })
     aiReply.value = result.reply || '我已收到你的需求，先從這些活動開始探索吧。'
+    agentToolCalls.value = result.tool_calls?.length
+      ? result.tool_calls
+      : (result.recommended_ids ?? []).map((id) => ({ tool: 'present_event_card', event_id: id, reason: 'Agent 推薦' }))
     activeFilter.value = '為你推薦'
-    activePlaceId.value = result.recommended_ids?.[0] ?? places.value[0]?.id ?? ''
+    const firstRecommendedId = agentToolCalls.value[0]?.event_id ?? places.value[0]?.id
+    const firstRecommendedPlace = places.value.find((place) => place.id === firstRecommendedId)
+    if (firstRecommendedPlace) selectPlace(firstRecommendedPlace)
+    sheetExpanded.value = true
+    await nextTick()
+    document.querySelector('.agent-tool-results')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
     Snackbar.success(`${agentServiceLabel} 已根據 ${result.used_event_count ?? places.value.length} 個活動完成分析`)
   } catch (error) {
     aiError.value = 'Agent 暫時沒有回應，推薦卡仍可直接瀏覽。'
@@ -361,6 +377,38 @@ onMounted(async () => {
         <p v-else-if="aiError" class="agent-error-copy">{{ aiError }}</p>
         <p v-else>{{ aiReply }}</p>
       </div>
+
+      <section v-if="agentRecommendedPlaces.length" class="agent-tool-results" aria-label="Agent 推薦活動">
+        <div class="agent-tool-heading">
+          <div>
+            <span>AGENT TOOL RESULTS</span>
+            <h2>已替你叫出這些活動</h2>
+          </div>
+          <strong>{{ agentRecommendedPlaces.length }} 個選項</strong>
+        </div>
+        <div class="agent-pick-grid">
+          <article
+            v-for="(place, index) in agentRecommendedPlaces"
+            :key="`agent-${place.id}`"
+            class="agent-pick-card"
+            :class="{ selected: activePlaceId === place.id }"
+            @click="selectPlace(place)"
+          >
+            <div class="agent-pick-rank">0{{ index + 1 }}</div>
+            <div class="agent-pick-main">
+              <div class="agent-tool-call"><span>✦</span> {{ place.agentTool }}</div>
+              <h3>{{ place.name }}</h3>
+              <p>{{ place.agentReason }}</p>
+              <div class="agent-pick-meta">
+                <span>{{ crowdLabel(place.crowd) }}人流</span>
+                <span>曝曬 {{ place.sun }}%</span>
+                <span>{{ place.distanceShort }}</span>
+              </div>
+            </div>
+            <button type="button" aria-label="在地圖查看" @click.stop="selectPlace(place)">⌖</button>
+          </article>
+        </div>
+      </section>
 
       <div class="recommendation-header">
         <div>

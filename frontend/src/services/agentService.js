@@ -4,6 +4,7 @@
  * @property {string} provider
  * @property {number} used_event_count
  * @property {string[]} recommended_ids
+ * @property {Array<{tool: string, event_id: string, reason: string}>} tool_calls
  */
 
 /**
@@ -40,6 +41,16 @@ function scoreEvent(event, message) {
   return score
 }
 
+function recommendationReason(event, message, index) {
+  const reasons = []
+  if ((message.includes('室內') || message.includes('不要太熱') || message.includes('冷氣')) && event.isIndoor) reasons.push('室內避暑')
+  if ((message.includes('人少') || message.includes('不要太擠') || message.includes('避開人潮')) && event.crowd < 50) reasons.push('人流較舒適')
+  if (message.includes('免費') && event.fee.includes('免費')) reasons.push('免費入場')
+  if (event.sun < 40) reasons.push('低曝曬')
+  if (reasons.length === 0) reasons.push(index === 0 ? '整體條件最符合' : '適合作為備選')
+  return reasons.slice(0, 2).join(' · ')
+}
+
 export class MockAgentService {
   label = 'MOCK AGENT'
 
@@ -57,6 +68,11 @@ export class MockAgentService {
       provider: this.label,
       used_event_count: events.length,
       recommended_ids: topEvents.map((event) => event.id),
+      tool_calls: topEvents.map((event, index) => ({
+        tool: 'present_event_card',
+        event_id: event.id,
+        reason: recommendationReason(event, message, index),
+      })),
     }
   }
 }
