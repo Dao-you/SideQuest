@@ -54,7 +54,7 @@ steps:
       - '--memory'
       - '512Mi'
       - '--set-env-vars'
-      - 'ENVIRONMENT=production,DEBUG=false'
+      - 'ENVIRONMENT=production,DEBUG=false,GCP_PROJECT_ID=${PROJECT_ID}'
 
 substitutions:
   _LOCATION: 'asia-east1'

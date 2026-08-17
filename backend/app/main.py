@@ -154,8 +154,9 @@ async def add_process_time_header(request: Request, call_next):
     return response
 
 
-# Include Health check endpoints at root level for Cloud Run
+# Include Health check endpoints at root level and API v1 prefix
 app.include_router(health_router)
+app.include_router(health_router, prefix=settings.API_V1_PREFIX)
 
 # Include API v1 Routes
 app.include_router(config_router, prefix=settings.API_V1_PREFIX)

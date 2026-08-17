@@ -11,6 +11,11 @@ router = APIRouter(tags=["Health & Monitoring"])
 
 
 @router.get(
+    "/health",
+    summary="Application Health Status (健康狀態)",
+    description="檢查後端伺服器程序是否存活。",
+)
+@router.get(
     "/healthz",
     summary="Cloud Run Liveness Probe (存活探針)",
     description="檢查後端伺服器程序是否存活。",
