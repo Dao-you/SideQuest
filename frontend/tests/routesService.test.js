@@ -1,7 +1,27 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { RoutesService } from '../src/services/routesService.js'
+import { applyShadeScenarioToGoogleRoute, RoutesService } from '../src/services/routesService.js'
+
+test('derives noon shade from the same Google walking steps shown in the UI', () => {
+  const result = applyShadeScenarioToGoogleRoute({
+    segments: [
+      { mode: 'WALK', instruction: '往西南前進', duration_minutes: 1, distance_meters: 21 },
+      { mode: 'WALK', instruction: '右轉進入巷口', duration_minutes: 1, distance_meters: 62 },
+      { mode: 'TRANSIT', instruction: '公車開往保一總隊', duration_minutes: 42, distance_meters: 10797 },
+      { mode: 'WALK', instruction: '往南步行', duration_minutes: 5, distance_meters: 345 },
+      { mode: 'WALK', instruction: '右轉繼續步行', duration_minutes: 7, distance_meters: 509 },
+    ],
+  }, 'noon')
+
+  assert.equal(result.shadePercentage, 20)
+  assert.equal(result.shadedDistanceMeters, 187)
+  assert.equal(result.sunExposureMinutes, 11.2)
+  assert.equal(result.walkingDistanceMeters, 937)
+  assert.equal(result.segments[2].segment_kind, 'transit')
+  assert.equal(result.segments[2].shade_percentage, null)
+  assert.ok(result.segments.filter((segment) => segment.segment_kind === 'walk').every((segment) => segment.shade_percentage === 20))
+})
 
 test('sends the selected shade period and maps it back to the UI model', async () => {
   const originalFetch = globalThis.fetch
@@ -53,8 +73,8 @@ test('uses period-specific fallback numbers when the backend is unavailable', as
     })
 
     assert.equal(result.shadeTimePeriod, 'evening')
-    assert.equal(result.shadePercentage, 98)
-    assert.equal(result.sunExposureMinutes, 0.1)
+    assert.equal(result.shadePercentage, 75)
+    assert.equal(result.sunExposureMinutes, 1.8)
   } finally {
     globalThis.fetch = originalFetch
   }

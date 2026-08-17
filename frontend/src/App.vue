@@ -7,7 +7,7 @@ import { SHADE_TIME_SCENARIOS, toEventPlace } from './data/eventPresentation'
 import { createAgentService } from './services/agentService'
 import { weatherService } from './services/weatherService'
 import { crowdService } from './services/crowdService'
-import { routesService } from './services/routesService'
+import { applyShadeScenarioToGoogleRoute, routesService } from './services/routesService'
 import { userService } from './services/userService'
 
 const rawEnvMapsKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || ''
@@ -174,6 +174,15 @@ function crowdClass(score) {
   if (score < 35) return 'good'
   if (score < 65) return 'medium'
   return 'busy'
+}
+
+function routeStepContext(step) {
+  const mode = String(step?.mode || '').toUpperCase()
+  if (!['WALK', 'WALKING', 'UNDERGROUND_WALK'].includes(mode)) return '🚇 大眾運輸路段'
+  if (Number.isFinite(Number(step?.shade_percentage))) {
+    return `◒ ${activeShadeScenario.value.label}遮蔭情境 ${Number(step.shade_percentage)}%`
+  }
+  return step?.is_shaded_or_underground ? '🛡️ 遮蔭/地下通道' : '☀️ 戶外步行路段'
 }
 
 async function loadWeather() {
@@ -560,8 +569,7 @@ async function planRouteToPlace(place) {
     activeRoute.value = googleRoute
       ? {
           ...route,
-          ...googleRoute,
-          routeAdvice: `${googleRoute.transitSummary}。遮蔭與地下街比例為 SideQuest 估算值，實際行走請以 Google Maps 導航為準。`,
+          ...applyShadeScenarioToGoogleRoute(googleRoute, shadeTimePeriod.value),
         }
       : route
 
@@ -1192,11 +1200,11 @@ onMounted(async () => {
             </div>
             <div class="route-shade-badge">
               <strong>{{ activeRoute.shadePercentage }}%</strong>
-              <small>遮蔭/地下率</small>
+              <small>步行遮蔭率</small>
             </div>
           </div>
           <div v-if="activeRoute.sunExposureMinutes !== undefined" class="route-sun-metric-bar" style="font-size: 0.78rem; color: #436456; background: #eef5f1; border-radius: 8px; padding: 6px 10px; margin: 8px 0 12px; display: flex; align-items: center; justify-content: space-between;">
-            <span>☀️ 直曬僅 <strong>{{ activeRoute.sunExposureMinutes }}</strong> 分鐘</span>
+            <span>☀️ 預估直曬 <strong>{{ activeRoute.sunExposureMinutes }}</strong> 分鐘</span>
             <span>🌲 總遮蔭步道 <strong>{{ activeRoute.shadedDistanceMeters || 0 }}m</strong></span>
           </div>
           <p class="route-advice-copy">{{ activeRoute.routeAdvice }}</p>
@@ -1205,7 +1213,7 @@ onMounted(async () => {
               <span class="step-num">{{ idx + 1 }}</span>
               <div class="step-info">
                 <strong>{{ step.instruction }}</strong>
-                <small>{{ step.duration_minutes }} 分鐘 · {{ step.distance_meters }}m {{ step.is_shaded_or_underground ? '🛡️ 遮蔭/地下通道' : '☀️ 戶外路段' }}</small>
+                <small>{{ step.duration_minutes }} 分鐘 · {{ step.distance_meters }}m · {{ routeStepContext(step) }}</small>
               </div>
             </div>
           </div>

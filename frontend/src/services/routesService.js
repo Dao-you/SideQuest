@@ -4,10 +4,79 @@
 import { apiClient } from './apiClient.js'
 
 const fallbackShadeScenarios = Object.freeze({
-  morning: { label: '早上 09:00', shade: 96, exposure: 0.3, distance: 432 },
-  noon: { label: '正午 12:30', shade: 90, exposure: 0.7, distance: 405 },
-  evening: { label: '傍晚 17:30', shade: 98, exposure: 0.1, distance: 441 },
+  morning: { label: '早上 09:00', shade: 65, exposure: 2.5, distance: 325 },
+  noon: { label: '正午 12:30', shade: 45, exposure: 3.9, distance: 225 },
+  evening: { label: '傍晚 17:30', shade: 75, exposure: 1.8, distance: 375 },
 })
+
+const googleWalkShadeScenarios = Object.freeze({
+  morning: { label: '早上 09:00', outdoor: 0.35, partial: 0.65, covered: 0.90 },
+  noon: { label: '正午 12:30', outdoor: 0.20, partial: 0.50, covered: 0.85 },
+  evening: { label: '傍晚 17:30', outdoor: 0.45, partial: 0.70, covered: 0.92 },
+})
+
+function isWalkingMode(mode) {
+  return ['WALK', 'WALKING'].includes(String(mode || '').toUpperCase())
+}
+
+function shadeRatioForInstruction(instruction, scenario) {
+  if (/地下|連通道|室內|站內|月台|underpass|underground/i.test(instruction)) return scenario.covered
+  if (/騎樓|林蔭|公園|arcade|tree/i.test(instruction)) return scenario.partial
+  return scenario.outdoor
+}
+
+/**
+ * Apply a deterministic demo scenario to the same Google Maps walking steps
+ * shown in the UI. Transit distance is intentionally excluded.
+ */
+export function applyShadeScenarioToGoogleRoute(route, shadeTimePeriod = 'morning') {
+  const scenario = googleWalkShadeScenarios[shadeTimePeriod] || googleWalkShadeScenarios.morning
+  let walkingDistanceMeters = 0
+  let walkingDurationMinutes = 0
+  let shadedDistanceMeters = 0
+  let sunExposureMinutes = 0
+
+  const segments = (route.segments || []).map((segment) => {
+    if (!isWalkingMode(segment.mode)) {
+      return { ...segment, segment_kind: 'transit', shade_percentage: null }
+    }
+
+    const distance = Math.max(0, Number(segment.distance_meters) || 0)
+    const duration = Math.max(0, Number(segment.duration_minutes) || 0)
+    const ratio = shadeRatioForInstruction(segment.instruction || '', scenario)
+    walkingDistanceMeters += distance
+    walkingDurationMinutes += duration
+    shadedDistanceMeters += distance * ratio
+    sunExposureMinutes += duration * (1 - ratio)
+
+    return {
+      ...segment,
+      segment_kind: 'walk',
+      shade_percentage: Math.round(ratio * 100),
+      is_shaded_or_underground: ratio >= 0.60,
+    }
+  })
+
+  const shadePercentage = walkingDistanceMeters > 0
+    ? Math.round((shadedDistanceMeters / walkingDistanceMeters) * 100)
+    : 100
+  const roundedSunExposure = Math.round(sunExposureMinutes * 10) / 10
+  const roundedShadedDistance = Math.round(shadedDistanceMeters)
+
+  return {
+    ...route,
+    segments,
+    shadePercentage,
+    sunExposureMinutes: roundedSunExposure,
+    shadedDistanceMeters: roundedShadedDistance,
+    walkingDistanceMeters: Math.round(walkingDistanceMeters),
+    walkingDurationMinutes: Math.round(walkingDurationMinutes * 10) / 10,
+    comfortScore: Math.max(30, Math.min(100, Math.round(shadePercentage * 0.6 + 40 - roundedSunExposure * 1.5))),
+    shadeTimePeriod,
+    shadeMethod: 'google-walking-steps-demo',
+    routeAdvice: `${scenario.label}固定情境：依畫面中的 Google Maps 步行分段估算，步行遮蔭約 ${shadePercentage}%，直曬約 ${roundedSunExposure} 分鐘；公車與捷運車程未納入步行遮蔭率。`,
+  }
+}
 
 /**
  * Standard Google Polyline decoder.
@@ -119,17 +188,17 @@ export class RoutesService {
         destination: destName,
         totalDurationMinutes: 22,
         totalDistanceMeters: 3200,
-        transitSummary: '搭乘捷運至周邊捷運站，沿地下街出口步行 3 分鐘',
+        transitSummary: '大眾運輸與步行示意（實際路徑待確認）',
         shadePercentage: scenario.shade,
         comfortScore: Math.round(scenario.shade * 0.6 + 40 - scenario.exposure * 1.5),
         sunExposureMinutes: scenario.exposure,
         shadedDistanceMeters: scenario.distance,
         shadeTimePeriod,
-        routeAdvice: `${scenario.label} 驗收情境：捷運連通道與騎樓覆蓋率約 ${scenario.shade}%，預估戶外直曬 ${scenario.exposure} 分鐘。`,
+        routeAdvice: `${scenario.label}保守 fallback：以共 500 公尺步行示意估算遮蔭約 ${scenario.shade}%，預估戶外直曬 ${scenario.exposure} 分鐘；實際路徑待 Google Maps 確認。`,
         segments: [
-          { mode: 'WALK', instruction: '從目前位置步行至鄰近捷運站 (地下通道)', duration_minutes: 4, distance_meters: 250, is_shaded_or_underground: true },
+          { mode: 'WALK', instruction: '從目前位置步行至鄰近大眾運輸站點', duration_minutes: 4, distance_meters: 250, is_shaded_or_underground: false, shade_percentage: scenario.shade, segment_kind: 'walk' },
           { mode: 'SUBWAY', instruction: '搭乘捷運抵達目標站點 (強冷空調)', duration_minutes: 14, distance_meters: 2700, is_shaded_or_underground: true },
-          { mode: 'WALK', instruction: `由地下街出口直通 ${destName} (騎樓遮蔽)`, duration_minutes: 4, distance_meters: 250, is_shaded_or_underground: true },
+          { mode: 'WALK', instruction: `由大眾運輸站點步行抵達 ${destName}`, duration_minutes: 4, distance_meters: 250, is_shaded_or_underground: false, shade_percentage: scenario.shade, segment_kind: 'walk' },
         ],
         path: [
           { lat: originLat, lng: originLng },
