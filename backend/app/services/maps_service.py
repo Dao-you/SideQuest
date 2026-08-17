@@ -177,17 +177,18 @@ class MapsService:
         # Try real Google Routes API if key is present
         if self.api_key:
             try:
-                async with httpx.AsyncClient(timeout=4.0) as client:
+                async with httpx.AsyncClient(timeout=5.0) as client:
                     url = "https://routes.googleapis.com/directions/v2:computeRoutes"
                     headers = {
                         "Content-Type": "application/json",
                         "X-Goog-Api-Key": self.api_key,
-                        "X-Goog-FieldMask": "routes.duration,routes.distanceMeters,routes.legs",
+                        "X-Goog-FieldMask": "routes.duration,routes.distanceMeters,routes.polyline.encodedPolyline,routes.legs.steps",
                     }
                     payload = {
                         "origin": {"location": {"latLng": {"latitude": origin_lat, "longitude": origin_lng}}},
                         "destination": {"location": {"latLng": {"latitude": dest_lat, "longitude": dest_lng}}},
                         "travelMode": "TRANSIT",
+                        "computeAlternativeRoutes": False,
                     }
                     res = await client.post(url, headers=headers, json=payload)
                     if res.status_code == 200:
@@ -197,16 +198,45 @@ class MapsService:
                             dur_str = r.get("duration", "900s").rstrip("s")
                             dur_min = max(3, int(float(dur_str) / 60))
                             dist_m = int(r.get("distanceMeters", 2000))
+                            encoded_poly = r.get("polyline", {}).get("encodedPolyline")
+                            
+                            segments: List[RouteSegment] = []
+                            legs = r.get("legs", [])
+                            if legs and "steps" in legs[0]:
+                                for step in legs[0]["steps"]:
+                                    st_mode = step.get("travelMode", "WALK")
+                                    st_dur = int(float(step.get("staticDuration", "120s").rstrip("s")) / 60)
+                                    st_dist = int(step.get("distanceMeters", 100))
+                                    st_inst = step.get("navigationInstruction", {}).get("instructions", "繼續前行")
+                                    
+                                    if "transitDetails" in step:
+                                        t_line = step["transitDetails"].get("transitLine", {}).get("name", "台北捷運")
+                                        st_mode = "SUBWAY"
+                                        st_inst = f"搭乘 {t_line}"
+                                    
+                                    is_sheltered = st_mode == "SUBWAY" or (prioritize_shade and "地下" in st_inst)
+                                    segments.append(
+                                        RouteSegment(
+                                            mode=st_mode,
+                                            instruction=st_inst,
+                                            duration_minutes=max(1, st_dur),
+                                            distance_meters=st_dist,
+                                            is_shaded_or_underground=is_sheltered,
+                                        )
+                                    )
+
+                            underground_pct = 75 if any(s.mode == "SUBWAY" for s in segments) else 35
                             return RouteComfort(
                                 origin="目前位置",
                                 destination=dest_name,
                                 total_duration_minutes=dur_min,
                                 total_distance_meters=dist_m,
-                                transit_summary=f"大眾運輸約 {dur_min} 分鐘 ({dist_m} 公尺)",
-                                underground_or_shaded_percentage=65 if prioritize_shade else 40,
-                                comfort_score=85.0,
-                                route_advice=f"Google Routes 即時路徑規劃：建議搭乘台北捷運直達，全程約 {dur_min} 分鐘。",
-                                segments=[],
+                                transit_summary=f"搭乘大眾運輸約 {dur_min} 分鐘 ({dist_m} 公尺)",
+                                underground_or_shaded_percentage=underground_pct,
+                                comfort_score=88.0 if underground_pct >= 60 else 72.0,
+                                route_advice=f"Google Routes 即時路徑規劃：建議搭乘台北捷運/公車直達，全程約 {dur_min} 分鐘，避暑遮蔽良好。",
+                                segments=segments,
+                                encoded_polyline=encoded_poly,
                             )
             except Exception as e:
                 logger.warning(f"Google Routes API call failed: {e}. Using transit comfort model.")

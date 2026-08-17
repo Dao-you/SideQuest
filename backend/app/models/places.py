@@ -50,6 +50,7 @@ class RouteComfort(BaseModel):
     comfort_score: float = Field(..., ge=0.0, le=100.0, description="Transit comfort rating")
     route_advice: str
     segments: List[RouteSegment] = Field(default_factory=list)
+    encoded_polyline: Optional[str] = Field(default=None, description="Google Polyline encoded path string")
 
 
 class RouteComputeRequest(BaseModel):

@@ -6,6 +6,7 @@ from app.api.routes.crowd import router as crowd_router
 from app.api.routes.weather import router as weather_router
 from app.api.routes.health import router as health_router
 from app.api.routes.user import router as user_router
+from app.api.routes.routes import router as routes_router
 
 __all__ = [
     "agent_router",
@@ -14,4 +15,5 @@ __all__ = [
     "weather_router",
     "health_router",
     "user_router",
+    "routes_router",
 ]

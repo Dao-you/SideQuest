@@ -12,6 +12,7 @@ from app.api.routes import (
     crowd_router,
     events_router,
     health_router,
+    routes_router,
     user_router,
     weather_router,
 )
@@ -161,6 +162,7 @@ app.include_router(user_router, prefix=settings.API_V1_PREFIX)
 app.include_router(events_router, prefix=settings.API_V1_PREFIX)
 app.include_router(crowd_router, prefix=settings.API_V1_PREFIX)
 app.include_router(weather_router, prefix=settings.API_V1_PREFIX)
+app.include_router(routes_router, prefix=settings.API_V1_PREFIX)
 
 
 @app.get("/", tags=["Root"])
