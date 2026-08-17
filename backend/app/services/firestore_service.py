@@ -6,6 +6,7 @@ from app.config import settings
 from app.logging_config import logger
 from app.models.crowd import HeatmapPoint, VenueLiveStatus
 from app.models.event import Event, EventFilter
+from app.services.event_matching import event_overlaps_window
 from app.services.mock_data_seeder import MockDataSeeder
 from app.services.real_event_fetcher import RealEventFetcher
 
@@ -75,6 +76,16 @@ class FirestoreService:
 
         filtered = []
         for evt in events:
+            if (filter_params.start_date or filter_params.end_date) and not event_overlaps_window(
+                evt.start_time,
+                evt.end_time,
+                filter_params.start_date,
+                filter_params.end_date,
+                filter_params.start_time,
+                filter_params.end_time,
+            ):
+                continue
+
             # Filter category
             if filter_params.category and filter_params.category.lower() not in evt.category.value.lower():
                 continue

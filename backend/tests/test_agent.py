@@ -55,6 +55,21 @@ async def test_agent_sync_chat():
 
 
 @pytest.mark.asyncio
+async def test_agent_sync_chat_honors_requested_date_and_occasion():
+    """A date/partner request is normalized and only matching events are ranked."""
+    agent = get_gemini_agent()
+    request = ChatRequest(message="2026年8月22日下午想和另一半約會，看展再喝咖啡")
+
+    res = await agent.chat(request)
+
+    assert res.parsed_criteria is not None
+    assert res.parsed_criteria.requested_date == "2026-08-22"
+    assert res.parsed_criteria.occasion == "約會"
+    assert res.recommendations
+    assert all(card.event.start_time <= "2026-08-22T23:59:59" or card.event.end_time >= "2026-08-22T00:00:00" for card in res.recommendations)
+
+
+@pytest.mark.asyncio
 async def test_agent_quick_recommend():
     """Test fast structured recommendation endpoint."""
     agent = get_gemini_agent()

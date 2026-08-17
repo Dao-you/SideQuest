@@ -3,6 +3,7 @@
 from typing import List, Optional
 from app.logging_config import logger
 from app.models.event import Event, EventCategory, EventFilter
+from app.services.event_matching import event_overlaps_window
 from app.services.firestore_service import FirestoreService, get_firestore_service
 from app.services.interfaces import EventServiceInterface
 from app.services.mock_data_seeder import MockDataSeeder
@@ -46,6 +47,18 @@ class EventService(EventServiceInterface):
             filtered = [
                 e for e in filtered
                 if kw in e.title.lower() or kw in e.description.lower() or any(kw in t.lower() for t in e.tags)
+            ]
+        if filter_params.start_date or filter_params.end_date:
+            filtered = [
+                e for e in filtered
+                if event_overlaps_window(
+                    e.start_time,
+                    e.end_time,
+                    filter_params.start_date,
+                    filter_params.end_date,
+                    filter_params.start_time,
+                    filter_params.end_time,
+                )
             ]
 
         offset = filter_params.offset

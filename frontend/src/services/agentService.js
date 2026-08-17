@@ -196,6 +196,7 @@ export class HttpAgentService {
         let recommendationCards = []
         let dispersalSummary = ''
         let oneSentenceSummary = ''
+        let evaluatedCount = 0
 
         const controller = apiClient.stream('/agent/chat/stream', payload, {
           onEvent: (type, data) => {
@@ -210,6 +211,7 @@ export class HttpAgentService {
             } else if (type === 'recommendation_cards') {
               recommendationCards = data.cards || []
               dispersalSummary = data.dispersal_summary || ''
+              evaluatedCount = data.evaluated_count || 0
             } else if (type === 'done') {
               oneSentenceSummary = data.one_sentence_summary || ''
             }
@@ -243,6 +245,7 @@ export class HttpAgentService {
               parsed_criteria: parsedCriteria,
               one_sentence_summary: oneSentenceSummary,
               dispersal_summary: dispersalSummary,
+              evaluated_count: evaluatedCount,
             })
           },
         })

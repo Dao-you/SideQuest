@@ -21,6 +21,12 @@ class SSEEventType(str, Enum):
 class ParsedCriteria(BaseModel):
     """PRD Section 7.3: Agent's structured understanding of user query."""
     date_time_range: str = Field(default="本週末下午", description="Understood date & time range")
+    requested_date: Optional[str] = Field(default=None, description="Normalized requested date in YYYY-MM-DD (Taipei time)")
+    requested_date_end: Optional[str] = Field(default=None, description="Normalized requested end date in YYYY-MM-DD (Taipei time)")
+    requested_start_time: Optional[str] = Field(default=None, description="Normalized requested local start time HH:MM")
+    requested_end_time: Optional[str] = Field(default=None, description="Normalized requested local end time HH:MM")
+    date_resolution: str = Field(default="unspecified", description="Date interpretation: exact, relative, or unspecified")
+    occasion: Optional[str] = Field(default=None, description="Occasion context, such as 約會、親子或朋友聚會")
     target_district: str = Field(default="台北市全區", description="Understood target area or district")
     interests: List[str] = Field(default_factory=list, description="Extracted interest topics / categories")
     max_budget_twd: Optional[int] = Field(default=None, description="Budget cap in TWD (None if not specified)")
