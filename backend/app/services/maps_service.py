@@ -284,11 +284,11 @@ class MapsService:
 
             segments = [
                 RouteSegment(
-                    mode="UNDERGROUND_WALK" if is_underground_hub else "WALK",
-                    instruction="步行至最近捷運站（優先選擇地下連通道與騎樓）",
+                    mode="WALK",
+                    instruction="從出發地步行至最近的大眾運輸站點",
                     duration_minutes=walk_to_station_min,
                     distance_meters=250,
-                    is_shaded_or_underground=True,
+                    is_shaded_or_underground=False,
                 ),
                 RouteSegment(
                     mode="SUBWAY",
@@ -299,7 +299,11 @@ class MapsService:
                 ),
                 RouteSegment(
                     mode="UNDERGROUND_WALK" if is_underground_hub else "WALK",
-                    instruction=f"出站後由地下街連通道/騎樓步行抵達 {dest_name}",
+                    instruction=(
+                        f"出站後由地下連通道步行抵達 {dest_name}"
+                        if is_underground_hub
+                        else f"出站後步行抵達 {dest_name}"
+                    ),
                     duration_minutes=walk_from_station_min,
                     distance_meters=200,
                     is_shaded_or_underground=is_underground_hub or profile.arcade_walkway_pct >= 70,
