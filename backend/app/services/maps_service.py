@@ -5,9 +5,9 @@ from typing import Dict, List, Optional
 import httpx
 
 from app.config import settings
-from app.logging_config import logger
 from app.models.places import PlaceDetails, RouteComfort, RouteSegment
 from app.models.weather import MicroclimateResponse, SolarExposureResponse, UVRiskLevel, WeatherCondition
+from app.services.urban_shade_service import get_urban_shade_engine
 
 
 class MapsService:
@@ -225,16 +225,25 @@ class MapsService:
                                         )
                                     )
 
-                            underground_pct = 75 if any(s.mode == "SUBWAY" for s in segments) else 35
+                            shade_engine = get_urban_shade_engine()
+                            shade_pct, sun_mins, advice, comfort = shade_engine.calculate_route_shade_metrics(
+                                dest_name=dest_name,
+                                distance_meters=dist_m,
+                                duration_minutes=dur_min,
+                                segments=segments,
+                                prioritize_shade=prioritize_shade,
+                            )
                             return RouteComfort(
                                 origin="目前位置",
                                 destination=dest_name,
                                 total_duration_minutes=dur_min,
                                 total_distance_meters=dist_m,
                                 transit_summary=f"搭乘大眾運輸約 {dur_min} 分鐘 ({dist_m} 公尺)",
-                                underground_or_shaded_percentage=underground_pct,
-                                comfort_score=88.0 if underground_pct >= 60 else 72.0,
-                                route_advice=f"Google Routes 即時路徑規劃：建議搭乘台北捷運/公車直達，全程約 {dur_min} 分鐘，避暑遮蔽良好。",
+                                underground_or_shaded_percentage=shade_pct,
+                                comfort_score=comfort,
+                                route_advice=advice,
+                                sun_exposure_minutes=sun_mins,
+                                shaded_distance_meters=int(dist_m * (shade_pct / 100.0)),
                                 segments=segments,
                                 encoded_polyline=encoded_poly,
                             )
@@ -242,20 +251,21 @@ class MapsService:
                 logger.warning(f"Google Routes API call failed: {e}. Using transit comfort model.")
 
         # Realistic Transit & Shaded Path Calculation Model
+        shade_engine = get_urban_shade_engine()
+        profile = shade_engine.match_urban_profile(dest_name)
         distance_meters = self._haversine_distance_meters(origin_lat, origin_lng, dest_lat, dest_lng)
 
         if distance_meters <= 800:
             walk_min = max(3, int(distance_meters / 75))
             transit_summary = f"步行約 {walk_min} 分鐘 ({distance_meters} 公尺)"
-            underground_ratio = 40 if "地下街" in dest_name or distance_meters < 300 else 15
-            comfort_score = 75.0 if prioritize_shade else 65.0
+            walk_inst = f"沿騎樓與人行林蔭步行至 {dest_name}" if prioritize_shade else f"步行至 {dest_name}"
             segments = [
                 RouteSegment(
                     mode="WALK",
-                    instruction=f"自出發地步行至 {dest_name}",
+                    instruction=walk_inst,
                     duration_minutes=walk_min,
                     distance_meters=distance_meters,
-                    is_shaded_or_underground=underground_ratio > 30,
+                    is_shaded_or_underground=profile.arcade_walkway_pct >= 70 or profile.tree_canopy_pct >= 60,
                 )
             ]
             total_duration = walk_min
@@ -265,15 +275,13 @@ class MapsService:
             walk_from_station_min = 3
             total_duration = walk_to_station_min + mrt_ride_min + walk_from_station_min
 
-            is_underground_hub = any(k in dest_name for k in ["南港", "瓶蓋工廠", "赤峰街", "中山", "忠孝", "北門"])
-            underground_ratio = 75 if is_underground_hub else 45
+            is_underground_hub = profile.underground_coverage_pct >= 80 or profile.is_indoor_complex
             transit_summary = f"搭乘台北捷運約 {total_duration} 分鐘 (含地下街/遮蔭步道)"
-            comfort_score = 88.0 if is_underground_hub else 78.0
 
             segments = [
                 RouteSegment(
                     mode="UNDERGROUND_WALK" if is_underground_hub else "WALK",
-                    instruction="步行至最近捷運站（優先選擇地下連通道）",
+                    instruction="步行至最近捷運站（優先選擇地下連通道與騎樓）",
                     duration_minutes=walk_to_station_min,
                     distance_meters=250,
                     is_shaded_or_underground=True,
@@ -282,21 +290,24 @@ class MapsService:
                     mode="SUBWAY",
                     instruction=f"搭乘台北捷運前往目標區域 ({mrt_ride_min} 分鐘車程，強冷空調舒適)",
                     duration_minutes=mrt_ride_min,
-                    distance_meters=distance_meters - 450,
+                    distance_meters=max(200, distance_meters - 450),
                     is_shaded_or_underground=True,
                 ),
                 RouteSegment(
-                    mode="WALK",
-                    instruction=f"出站後步行抵達 {dest_name}",
+                    mode="UNDERGROUND_WALK" if is_underground_hub else "WALK",
+                    instruction=f"出站後由地下街連通道/騎樓步行抵達 {dest_name}",
                     duration_minutes=walk_from_station_min,
                     distance_meters=200,
-                    is_shaded_or_underground=is_underground_hub,
+                    is_shaded_or_underground=is_underground_hub or profile.arcade_walkway_pct >= 70,
                 ),
             ]
 
-        route_advice = (
-            f"全程約 {total_duration} 分鐘。建議多利用捷運地下連通道與林蔭騎樓，"
-            f"有效避開高溫曝曬（遮蔭/地下覆蓋率高達 {underground_ratio}%）。"
+        shade_pct, sun_mins, advice, comfort = shade_engine.calculate_route_shade_metrics(
+            dest_name=dest_name,
+            distance_meters=distance_meters,
+            duration_minutes=total_duration,
+            segments=segments,
+            prioritize_shade=prioritize_shade,
         )
 
         return RouteComfort(
@@ -305,42 +316,21 @@ class MapsService:
             total_duration_minutes=total_duration,
             total_distance_meters=distance_meters,
             transit_summary=transit_summary,
-            underground_or_shaded_percentage=underground_ratio,
-            comfort_score=comfort_score,
-            route_advice=route_advice,
+            underground_or_shaded_percentage=shade_pct,
+            comfort_score=comfort,
+            route_advice=advice,
+            sun_exposure_minutes=sun_mins,
+            shaded_distance_meters=int(distance_meters * (shade_pct / 100.0)),
             segments=segments,
         )
 
-    async def get_solar_exposure(self, lat: float, lng: float) -> SolarExposureResponse:
-        """Estimate solar radiation, shade coverage, and sun safety advice via Google Solar or Physical Model."""
-        if self.api_key:
-            try:
-                async with httpx.AsyncClient(timeout=4.0) as client:
-                    url = f"https://solar.googleapis.com/v1/buildingInsights:findClosest?location.latitude={lat}&location.longitude={lng}&key={self.api_key}"
-                    res = await client.get(url)
-                    if res.status_code == 200:
-                        data = res.json()
-                        max_sun = data.get("solarPotential", {}).get("maxSunshineHoursPerYear", 1300)
-                        return SolarExposureResponse(
-                            latitude=lat,
-                            longitude=lng,
-                            solar_radiation_w_m2=round(float(max_sun) / 2.0, 1),
-                            shade_coverage_percentage=50,
-                            sun_exposure_level="MODERATE",
-                            sunscreen_recommendation="Google Solar API 提示：該區域日照充足，建議備妥陽傘並行走騎樓蔭涼處。",
-                            best_transit_mode="transit_underground",
-                        )
-            except Exception as e:
-                logger.warning(f"Google Solar API request failed: {e}. Using solar radiation model.")
-
-        return SolarExposureResponse(
+    async def get_solar_exposure(self, lat: float, lng: float, venue_name: str = "台北市區") -> SolarExposureResponse:
+        """Estimate solar radiation, shade coverage, and sun safety advice via Live Open-Meteo & UrbanShadeEngine."""
+        shade_engine = get_urban_shade_engine()
+        return await shade_engine.get_live_solar_reading(
             latitude=lat,
             longitude=lng,
-            solar_radiation_w_m2=650.0,
-            shade_coverage_percentage=45,
-            sun_exposure_level="HIGH",
-            sunscreen_recommendation="目前日照強烈且 UV 指數偏高，建議行走騎樓或地下街，戶外活動請攜帶陽傘並塗抹 SPF50+ 防曬乳。",
-            best_transit_mode="transit_underground",
+            target_name=venue_name,
         )
 
 

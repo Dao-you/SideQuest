@@ -1105,13 +1105,17 @@ onMounted(async () => {
         <div v-if="activeRoute" class="route-guidance-card">
           <div class="route-card-header">
             <div>
-              <span class="route-tag">{{ activeRoute.isGoogleRoute ? 'GOOGLE MAPS 大眾運輸' : '實際路徑' }}</span>
+              <span class="route-tag">{{ activeRoute.isGoogleRoute ? 'GOOGLE MAPS 智慧遮蔭' : '🛡️ 智慧抗熱遮蔭路徑' }}</span>
               <h3>{{ activeRoute.transitSummary }}</h3>
             </div>
             <div class="route-shade-badge">
               <strong>{{ activeRoute.shadePercentage }}%</strong>
-              <small>SideQuest 遮蔭估算</small>
+              <small>遮蔭/地下率</small>
             </div>
+          </div>
+          <div v-if="activeRoute.sunExposureMinutes !== undefined" class="route-sun-metric-bar" style="font-size: 0.78rem; color: #436456; background: #eef5f1; border-radius: 8px; padding: 6px 10px; margin: 8px 0 12px; display: flex; align-items: center; justify-content: space-between;">
+            <span>☀️ 直曬僅 <strong>{{ activeRoute.sunExposureMinutes }}</strong> 分鐘</span>
+            <span>🌲 總遮蔭步道 <strong>{{ activeRoute.shadedDistanceMeters || 0 }}m</strong></span>
           </div>
           <p class="route-advice-copy">{{ activeRoute.routeAdvice }}</p>
           <div v-if="activeRoute.segments?.length" class="route-steps">
@@ -1119,7 +1123,7 @@ onMounted(async () => {
               <span class="step-num">{{ idx + 1 }}</span>
               <div class="step-info">
                 <strong>{{ step.instruction }}</strong>
-                <small>{{ step.duration_minutes }} 分鐘 · {{ step.distance_meters }}m</small>
+                <small>{{ step.duration_minutes }} 分鐘 · {{ step.distance_meters }}m {{ step.is_shaded_or_underground ? '🛡️ 遮蔭/地下通道' : '☀️ 戶外路段' }}</small>
               </div>
             </div>
           </div>
@@ -1135,8 +1139,8 @@ onMounted(async () => {
           </div>
           <div>
             <span>◒</span>
-            <small>曝曬程度</small>
-            <strong>{{ detailPlace.isIndoor ? '室內場地' : '戶外活動' }}</strong>
+            <small>曝曬/遮蔽評估</small>
+            <strong>{{ detailPlace.isIndoor ? '室內空調 (0% 曝曬)' : (detailPlace.sunLabel || `戶外曝曬 ${detailPlace.sun}%`) }}</strong>
           </div>
           <div>
             <span>◷</span>
@@ -1397,8 +1401,8 @@ onMounted(async () => {
                   <i class="metric-icon crowd-icon">♧</i> 人流 {{ crowdLabel(place.crowd) }}
                   <strong v-if="Number.isFinite(place.crowd)">{{ place.crowd }}{{ place.crowdIsMock ? '*' : '' }}</strong>
                 </span>
-                <span class="metric">
-                  <i class="metric-icon sun-icon">◒</i> {{ place.isIndoor ? '室內場地' : '戶外活動' }}
+                <span class="metric" :title="place.sunLabel || ''">
+                  <i class="metric-icon sun-icon">◒</i> {{ place.isIndoor ? '室內 0% 曝曬' : `曝曬 ${place.sun}% (遮蔭 ${place.shade || (100 - place.sun)}%)` }}
                 </span>
                 <span class="metric"><i class="metric-icon time-icon">◷</i> {{ place.time }}</span>
               </div>

@@ -354,11 +354,24 @@ class GeminiAgent:
         # =========================================================================
         markdown_sections = []
 
+        rad = getattr(microclimate, "solar_radiation_w_m2", None) or 0.0
+        is_night = microclimate.uv_index == 0.0 and rad <= 5.0
+        if is_night:
+            env_desc = (
+                f"🌙 **微氣候與夜間環境**：台北當前氣溫 **{microclimate.temperature_c}°C**（體感 {microclimate.apparent_temperature_c}°C），"
+                f"夜間無直射日曬（UV 0.0），夜風微涼。已為您規劃最佳大眾運輸與室內/街區動線！\n\n"
+            )
+        else:
+            env_desc = (
+                f"☀️ **微氣候與日照感知**：台北當前氣溫 **{microclimate.temperature_c}°C**（體感 {microclimate.apparent_temperature_c}°C），"
+                f"太陽輻射 **{rad} W/m²**，紫外線 **UV {microclimate.uv_index} ({microclimate.uv_risk_level.value})**。"
+                f"已為您優先規劃具備**全室內空調**與**騎樓/捷運地下街直通**的高遮蔭避暑動線！\n\n"
+            )
+
         markdown_sections.append(
             f"### 🧭 SideQuest 智慧活動與人流決策報告\n\n"
             f"> 💬 **決策摘要**：{delta_summary}\n\n"
-            f"☀️ **微氣候與環境感知**：台北當前氣溫 **{microclimate.temperature_c}°C**（體感 {microclimate.apparent_temperature_c}°C），"
-            f"紫外線指數 **{microclimate.uv_index} ({microclimate.uv_risk_level.value})**。已為您優先規劃具備**全室內空調**與**捷運地下街直通**的活動動線！\n\n"
+            f"{env_desc}"
         )
 
         if overcrowded_card and hidden_gem_card:
