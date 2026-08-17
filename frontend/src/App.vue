@@ -1,5 +1,5 @@
 <script setup>
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, h, nextTick, onMounted, ref, watch } from 'vue'
 import { Loader } from '@googlemaps/js-api-loader'
 import { Badge, Button, Chip, Input, Progress, Snackbar } from '@varlet/ui'
 import { createEventDataSource } from './data/eventDataSource'
@@ -9,6 +9,46 @@ import { weatherService } from './services/weatherService'
 import { crowdService } from './services/crowdService'
 import { applyShadeScenarioToGoogleRoute, routesService } from './services/routesService'
 import { userService } from './services/userService'
+
+const uiIconPaths = {
+  accessibility: ['M12 5a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z', 'M9 8h6', 'M12 7v5', 'm12 12-4 8', 'm12 12 5 8', 'M7 14h10'],
+  alert: ['m12 3 9 17H3L12 3Z', 'M12 9v5', 'M12 17h.01'],
+  bike: ['M5 17a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z', 'M19 17a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z', 'm8 14 3-6 3 6', 'M9 8h3', 'M14 8h2'],
+  calendar: ['M7 3v4M17 3v4', 'M4 8h16', 'M6 5h12a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Z', 'M8 12h.01M12 12h.01M16 12h.01M8 16h.01M12 16h.01'],
+  clock: ['M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18Z', 'M12 7v5l3 2'],
+  close: ['m6 6 12 12M18 6 6 18'],
+  compare: ['M8 4v16', 'm4 8 4-4 4 4', 'M16 20V4', 'm12 16 4 4 4-4'],
+  external: ['M14 4h6v6', 'm20 4-9 9', 'M18 13v5a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h5'],
+  location: ['M12 21s7-6.2 7-11a7 7 0 1 0-14 0c0 4.8 7 11 7 11Z', 'M12 13a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z'],
+  map: ['M4 5l6-2 4 2 6-2v16l-6 2-4-2-6 2V5Z', 'M10 3v16M14 5v16'],
+  refresh: ['M20 11a8 8 0 0 0-14.7-4L3 10', 'M3 5v5h5', 'M4 13a8 8 0 0 0 14.7 4L21 14', 'M21 19v-5h-5'],
+  route: ['M5 5h5l4 7h5', 'M5 19h5l4-7h5', 'M5 3a2 2 0 1 0 0 4 2 2 0 0 0 0-4Z', 'M19 17a2 2 0 1 0 0 4 2 2 0 0 0 0-4Z'],
+  share: ['M15 8l-6 4 6 4', 'M18 5a3 3 0 1 0 0 6 3 3 0 0 0 0-6ZM6 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6ZM18 13a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z'],
+  shade: ['M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18Z', 'M12 7v5l4 2'],
+  sun: ['M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6 7 7M17 17l1.4 1.4M18.4 5.6 17 7M7 17l-1.4 1.4', 'M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8Z'],
+  swap: ['M7 7h10l-3-3', 'M17 17H7l3 3'],
+  taxi: ['M5 17h14l-1-7H6l-1 7Z', 'm7 10 2-4h6l2 4', 'M8 19h2M14 19h2'],
+  transit: ['M6 4h12a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z', 'M4 9h16', 'M8 13h.01M16 13h.01', 'M7 20h2M15 20h2'],
+  walk: ['M13 5a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z', 'm12 7-2 5 3 2 2 6', 'm10 12-4 4', 'm13 14 5-2'],
+  bookmark: ['M6 4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v17l-6-3-6 3V4Z'],
+  spark: ['m12 3 1.6 6.4L20 12l-6.4 1.6L12 20l-1.6-6.4L4 12l6.4-2.6L12 3Z'],
+  crowd: ['M8 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM16 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z', 'M2 20a6 6 0 0 1 12 0M10 20a6 6 0 0 1 12 0'],
+  chevronDown: ['m6 9 6 6 6-6'],
+}
+
+const UiIcon = (props, { attrs }) => h('svg', {
+  ...attrs,
+  class: ['ui-icon', attrs.class],
+  viewBox: '0 0 24 24',
+  fill: 'none',
+  stroke: 'currentColor',
+  'stroke-width': '1.8',
+  'stroke-linecap': 'round',
+  'stroke-linejoin': 'round',
+  'aria-hidden': 'true',
+  focusable: 'false',
+}, (uiIconPaths[props.name] || uiIconPaths.spark).map((d) => h('path', { d })))
+UiIcon.props = { name: { type: String, required: true } }
 
 const rawEnvMapsKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || 'AIzaSyBvHetpB7ilLcNSJXeecfVgaLQ7b3TGobY'
 const TAIPEI_CENTER = { lat: 25.0478, lng: 121.5170 }
@@ -93,14 +133,14 @@ const routeOriginSwapped = ref(false)
 const selectedModalTab = ref('transit') // 'overview' | 'youbike' | 'transit' | 'taxi'
 
 const routePreferencesList = [
-  { id: 'fastest', label: '最快抵達', icon: '●', desc: '最快速抵達' },
-  { id: 'wheelchair', label: '無障礙', icon: '♿', desc: '電梯/推車/大件行李友善' },
-  { id: 'more_bus', label: '公車優先', icon: '公', desc: '公車直達優先' },
-  { id: 'more_subway', label: '捷運優先', icon: '捷', desc: '捷運軌道優先' },
-  { id: 'less_walking', label: '少走路', icon: '走', desc: '少走路/少換乘' },
-  { id: 'more_shading', label: '較少曝曬', icon: '蔭', desc: '地下街與林蔭遮蔽' },
-  { id: 'less_crowded', label: '避開人潮', icon: '人', desc: '舒適離峰車廂' },
-  { id: 'mixed', label: '混合交通', icon: '混', desc: 'YouBike+捷運組合' },
+  { id: 'fastest', label: '最快抵達', icon: 'route', desc: '最快速抵達' },
+  { id: 'wheelchair', label: '無障礙', icon: 'accessibility', desc: '電梯/推車/大件行李友善' },
+  { id: 'more_bus', label: '公車優先', icon: 'transit', desc: '公車直達優先' },
+  { id: 'more_subway', label: '捷運優先', icon: 'transit', desc: '捷運軌道優先' },
+  { id: 'less_walking', label: '少走路', icon: 'walk', desc: '少走路/少換乘' },
+  { id: 'more_shading', label: '較少曝曬', icon: 'shade', desc: '地下街與林蔭遮蔽' },
+  { id: 'less_crowded', label: '避開人潮', icon: 'crowd', desc: '舒適離峰車廂' },
+  { id: 'mixed', label: '混合交通', icon: 'bike', desc: 'YouBike+捷運組合' },
 ]
 
 const departureTimeOptions = [
@@ -291,11 +331,17 @@ function crowdClass(score) {
 
 function routeStepContext(step) {
   const mode = String(step?.mode || '').toUpperCase()
-  if (!['WALK', 'WALKING', 'UNDERGROUND_WALK'].includes(mode)) return '🚇 大眾運輸路段'
+  if (!['WALK', 'WALKING', 'UNDERGROUND_WALK'].includes(mode)) return '大眾運輸路段'
   if (Number.isFinite(Number(step?.shade_percentage))) {
-    return `◒ ${activeShadeScenario.value.label}遮蔭情境 ${Number(step.shade_percentage)}%`
+    return `${activeShadeScenario.value.label}遮蔭情境 ${Number(step.shade_percentage)}%`
   }
-  return step?.is_shaded_or_underground ? '🛡️ 遮蔭/地下通道' : '☀️ 戶外步行路段'
+  return step?.is_shaded_or_underground ? '遮蔭／地下通道' : '戶外步行路段'
+}
+
+function routeStepIcon(step) {
+  const mode = String(step?.mode || '').toUpperCase()
+  if (['WALK', 'WALKING', 'UNDERGROUND_WALK'].includes(mode)) return step?.is_shaded_or_underground ? 'shade' : 'walk'
+  return 'transit'
 }
 
 async function loadWeather() {
@@ -1879,7 +1925,7 @@ onMounted(async () => {
 
       <!-- Active Route Notification Bar -->
       <div v-if="activeRoute" class="map-route-banner">
-        <div class="route-banner-icon">⌁</div>
+        <div class="route-banner-icon"><UiIcon name="route" /></div>
         <div class="route-banner-info">
           <strong>{{ activeRoute.destination }}</strong>
           <span>{{ activeRoute.transitSummary }} · {{ activeShadeScenario.label }}遮蔭情境 {{ activeRoute.shadePercentage }}%</span>
@@ -1941,7 +1987,7 @@ onMounted(async () => {
             <small>{{ detailPlace.dateRange }}</small>
             <!-- Smart Departure & Arrival Advice (Step 6 & 12) -->
             <div class="smart-timing-strip">
-              <span class="timing-badge">🕒 智慧出發建議</span>
+              <span class="timing-badge"><UiIcon name="clock" /> 智慧出發建議</span>
               <span>{{ getSmartDepartureAdvice(detailPlace).text }}</span>
             </div>
           </div>
@@ -1949,34 +1995,34 @@ onMounted(async () => {
 
         <nav class="detail-quick-actions" aria-label="活動動作">
           <button type="button" class="primary" :disabled="routeLoading || !detailPlace.position" @click="planRouteToPlace(detailPlace)">
-            <span aria-hidden="true">⌁</span>
+            <span aria-hidden="true"><UiIcon name="route" /></span>
             <strong>{{ routeLoading ? '規劃中…' : '規劃路線' }}</strong>
           </button>
           <button type="button" class="btn-gcal" @click="addToGoogleCalendar(detailPlace)">
-            <span aria-hidden="true">📅</span><strong>加行事曆</strong>
+            <span aria-hidden="true"><UiIcon name="calendar" /></span><strong>加行事曆</strong>
           </button>
           <button type="button" :class="{ active: pkPlaceIds.has(detailPlace.id) }" @click="togglePkPlace(detailPlace)">
-            <span aria-hidden="true">⚖️</span><strong>{{ pkPlaceIds.has(detailPlace.id) ? '已加PK' : 'PK比較' }}</strong>
+            <span aria-hidden="true"><UiIcon name="compare" /></span><strong>{{ pkPlaceIds.has(detailPlace.id) ? '已加PK' : 'PK比較' }}</strong>
           </button>
           <button type="button" @click="openShareModal(detailPlace)">
-            <span aria-hidden="true">🔗</span><strong>分享卡片</strong>
+            <span aria-hidden="true"><UiIcon name="share" /></span><strong>分享卡片</strong>
           </button>
           <button
             type="button"
             :class="{ favorited: favoritePlaceIds.has(detailPlace.id) }"
             @click="toggleBookmark(detailPlace)"
           >
-            <span aria-hidden="true">{{ favoritePlaceIds.has(detailPlace.id) ? '♥' : '♡' }}</span>
+            <span aria-hidden="true"><UiIcon name="bookmark" /></span>
             <strong>{{ favoritePlaceIds.has(detailPlace.id) ? '已收藏' : '收藏' }}</strong>
           </button>
           <button type="button" class="btn-sim-alert" @click="triggerSimulateConditionChange(detailPlace)" title="測試天候驟變與人潮變化">
-            <span aria-hidden="true">🚨</span><strong>測試突發狀況</strong>
+            <span aria-hidden="true"><UiIcon name="alert" /></span><strong>測試突發狀況</strong>
           </button>
           <button type="button" @click="openGoogleMapsNavigation(detailPlace)">
-            <span aria-hidden="true">🗺️</span><strong>Google導航</strong>
+            <span aria-hidden="true"><UiIcon name="map" /></span><strong>Google導航</strong>
           </button>
           <a v-if="detailPlace.sourceUrl" :href="detailPlace.sourceUrl" target="_blank" rel="noopener noreferrer">
-            <span aria-hidden="true">↗</span><strong>活動官網</strong>
+            <span aria-hidden="true"><UiIcon name="external" /></span><strong>活動官網</strong>
           </a>
         </nav>
 
@@ -1985,7 +2031,7 @@ onMounted(async () => {
           <!-- Top Route Controls Bar -->
           <div class="route-top-bar">
             <button type="button" class="route-back-btn" @click="resetRouteState" title="關閉路線">
-              <span aria-hidden="true">✕</span> 清除路線
+              <UiIcon name="close" /> 清除路線
             </button>
             <div class="route-time-selector-wrapper">
               <button
@@ -1993,9 +2039,9 @@ onMounted(async () => {
                 class="route-time-btn"
                 @click="showDepartureDropdown = !showDepartureDropdown"
               >
-                 <span>◷</span>
+                <UiIcon name="clock" />
                 <strong>{{ routeDepartureTime }}</strong>
-                <span class="chevron">⌄</span>
+                <UiIcon class="chevron" name="chevronDown" />
               </button>
               <div v-if="showDepartureDropdown" class="route-time-dropdown">
                 <button
@@ -2010,7 +2056,7 @@ onMounted(async () => {
               </div>
             </div>
             <button type="button" class="route-refresh-btn" :disabled="routeLoading" @click="planRouteToPlace(detailPlace)" title="重新整理路線">
-              <span>⟳</span>
+              <UiIcon name="refresh" />
             </button>
           </div>
 
@@ -2039,7 +2085,7 @@ onMounted(async () => {
               title="對調出發地與目的地"
               @click="toggleSwapRoute(detailPlace)"
             >
-              <span>⇅</span>
+              <UiIcon name="swap" />
             </button>
           </div>
 
@@ -2054,7 +2100,7 @@ onMounted(async () => {
               :disabled="routeLoading"
               @click="selectRoutePreference(pref.id, detailPlace)"
             >
-              <span class="pref-icon">{{ pref.icon }}</span>
+              <span class="pref-icon"><UiIcon :name="pref.icon" /></span>
               <span class="pref-label">{{ pref.label }}</span>
             </button>
           </div>
@@ -2063,7 +2109,7 @@ onMounted(async () => {
           <div class="multimodal-overview-grid">
             <div class="modal-box" :class="{ highlight: routePreference === 'less_walking' }">
               <div class="modal-box-header">
-                <span class="modal-icon">🚶</span>
+                <span class="modal-icon"><UiIcon name="walk" /></span>
                 <span class="modal-title">步行</span>
               </div>
               <div class="modal-metrics">
@@ -2074,7 +2120,7 @@ onMounted(async () => {
 
             <div class="modal-box" :class="{ highlight: routePreference === 'mixed' }">
               <div class="modal-box-header">
-                <span class="modal-icon">🚲</span>
+                <span class="modal-icon"><UiIcon name="bike" /></span>
                 <span class="modal-title">單車</span>
               </div>
               <div class="modal-metrics">
@@ -2085,7 +2131,7 @@ onMounted(async () => {
 
             <div class="modal-box">
               <div class="modal-box-header">
-                <span class="modal-icon">🚕</span>
+                <span class="modal-icon"><UiIcon name="taxi" /></span>
                 <span class="modal-title">計程車</span>
               </div>
               <div class="modal-metrics">
@@ -2096,12 +2142,12 @@ onMounted(async () => {
 
             <div class="modal-box highlight-transit">
               <div class="modal-box-header">
-                <span class="modal-icon">🚇</span>
+                <span class="modal-icon"><UiIcon name="transit" /></span>
                 <span class="modal-title">大眾運輸</span>
               </div>
               <div class="modal-metrics">
                 <strong>{{ activeRoute.totalDurationMinutes }} <small>分鐘</small></strong>
-                <span class="shade-pill">◒ {{ activeRoute.shadePercentage }}% 步行遮蔭</span>
+                <span class="shade-pill"><UiIcon name="shade" /> {{ activeRoute.shadePercentage }}% 步行遮蔭</span>
               </div>
             </div>
           </div>
@@ -2110,7 +2156,7 @@ onMounted(async () => {
           <div class="youbike-option-card">
             <div class="option-card-header">
               <div class="option-title-group">
-                <span class="badge-youbike">🚲 YouBike 2.0</span>
+                <span class="badge-youbike"><UiIcon name="bike" /> YouBike 2.0</span>
                 <span class="option-price">$20.00</span>
               </div>
               <div class="option-duration">
@@ -2119,7 +2165,7 @@ onMounted(async () => {
               </div>
             </div>
             <div class="option-meta-row">
-              <span>📍 {{ activeRoute.multimodal?.bike_station || '周邊租賃站點' }} · 可借 5 輛 / 可還 12 位</span>
+              <span><UiIcon name="location" /> {{ activeRoute.multimodal?.bike_station || '周邊租賃站點' }} · 可借 5 輛 / 可還 12 位</span>
             </div>
             <p class="option-desc">
               沿著林蔭單車道前行，預估消耗 <strong>{{ activeRoute.multimodal?.bike_calories || 128 }}</strong> 大卡。
@@ -2131,8 +2177,7 @@ onMounted(async () => {
             <div class="route-card-header">
               <div>
                 <span class="route-tag">
-                  {{ activeShadeScenario.label }} ·
-                  {{ routePreferencesList.find(p => p.id === routePreference)?.icon }}
+                  <UiIcon name="route" /> {{ activeShadeScenario.label }} ·
                   {{ routePreferencesList.find(p => p.id === routePreference)?.label }}推薦
                   {{ activeRoute.pathUnavailable ? '· 路徑待確認' : '' }}
                 </span>
@@ -2147,13 +2192,13 @@ onMounted(async () => {
             <!-- Route Badges Row -->
             <div class="route-feature-badges">
               <span v-if="activeRoute.accessibilityNote" class="feat-badge access-badge">
-                ♿ {{ activeRoute.accessibilityNote }}
+                <UiIcon name="accessibility" /> {{ activeRoute.accessibilityNote }}
               </span>
               <span v-if="activeRoute.crowdNote" class="feat-badge crowd-badge">
-                👥 {{ activeRoute.crowdNote }}
+                <UiIcon name="crowd" /> {{ activeRoute.crowdNote }}
               </span>
               <span v-if="activeRoute.sunExposureMinutes !== undefined" class="feat-badge sun-badge">
-                ☀️ 預估直曬 {{ activeRoute.sunExposureMinutes }} 分鐘
+                <UiIcon name="sun" /> 預估直曬 {{ activeRoute.sunExposureMinutes }} 分鐘
               </span>
             </div>
 
@@ -2167,9 +2212,9 @@ onMounted(async () => {
                   <div class="step-main">
                     <strong>{{ step.instruction }}</strong>
                     <span v-if="step.is_shaded_or_underground && ['WALK', 'WALKING', 'UNDERGROUND_WALK'].includes(String(step.mode || '').toUpperCase())" class="step-tag-shade">{{ routeStepContext(step) }}</span>
-                    <span v-if="step.is_accessible" class="step-tag-access">♿ 無障礙</span>
+                    <span v-if="step.is_accessible" class="step-tag-access"><UiIcon name="accessibility" /> 無障礙</span>
                   </div>
-                  <small>{{ step.duration_minutes }} 分鐘 · {{ step.distance_meters }}m · {{ routeStepContext(step) }} {{ step.transit_line ? `· ${step.transit_line}` : '' }}</small>
+                  <small><UiIcon :name="routeStepIcon(step)" /> {{ step.duration_minutes }} 分鐘 · {{ step.distance_meters }}m · {{ routeStepContext(step) }} {{ step.transit_line ? `· ${step.transit_line}` : '' }}</small>
                 </div>
               </div>
             </div>
@@ -2179,7 +2224,7 @@ onMounted(async () => {
           <div class="taxi-option-card">
             <div class="option-card-header">
               <div class="option-title-group">
-                <span class="badge-taxi">計程車／專車直達</span>
+                <span class="badge-taxi"><UiIcon name="taxi" /> 計程車／專車直達</span>
                 <span class="option-price">約 NT$ {{ activeRoute.multimodal?.taxi_cost_twd || 195 }}</span>
               </div>
               <div class="option-duration">
@@ -2194,7 +2239,7 @@ onMounted(async () => {
                 rel="noopener noreferrer"
                 class="taxi-nav-btn"
               >
-                <span>↗</span> 開啟導航
+                <UiIcon name="external" /> 開啟導航
               </a>
             </div>
           </div>
@@ -2202,19 +2247,19 @@ onMounted(async () => {
 
         <div class="detail-status-grid">
           <div>
-            <span>♧</span>
+            <span><UiIcon name="crowd" /></span>
             <small>目前人流</small>
             <strong :class="crowdClass(detailPlace.crowd)">
               {{ crowdLabel(detailPlace.crowd) }}<template v-if="Number.isFinite(detailPlace.crowd)"> ({{ detailPlace.crowd }}){{ detailPlace.crowdIsMock ? '（示意）' : '' }}</template>
             </strong>
           </div>
           <div>
-            <span>◒</span>
+            <span><UiIcon name="shade" /></span>
             <small>曝曬/遮蔽評估</small>
             <strong>{{ detailPlace.isIndoor ? '室內空調 (0% 曝曬)' : (detailPlace.sunLabel || `戶外曝曬 ${detailPlace.sun}%`) }}</strong>
           </div>
           <div>
-            <span>◷</span>
+            <span><UiIcon name="route" /></span>
             <small>預估距離</small>
             <strong>{{ detailPlace.distance }}</strong>
           </div>
