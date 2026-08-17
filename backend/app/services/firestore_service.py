@@ -1,4 +1,4 @@
-"""Firestore Service with Graceful Degradation and In-Memory Fallback."""
+"""Firestore Service with Real Open Data Sync and Graceful Degradation."""
 
 import os
 from typing import Dict, List, Optional
@@ -7,10 +7,11 @@ from app.logging_config import logger
 from app.models.crowd import HeatmapPoint, VenueLiveStatus
 from app.models.event import Event, EventFilter
 from app.services.mock_data_seeder import MockDataSeeder
+from app.services.real_event_fetcher import RealEventFetcher
 
 
 class FirestoreService:
-    """Manages Firestore connections and provides in-memory fallback for offline/demo reliability."""
+    """Manages Firestore connections and real-world open data synchronization."""
 
     def __init__(self) -> None:
         self._firestore_client = None
@@ -19,18 +20,28 @@ class FirestoreService:
         # In-memory storage caches
         self._events_cache: Dict[str, Event] = {}
         self._venues_cache: Dict[str, VenueLiveStatus] = {}
+        self._real_fetcher = RealEventFetcher()
 
     async def initialize(self) -> None:
-        """Initialize connection to Firestore or load in-memory datasets."""
-        # Always preload seed data into memory cache
+        """Initialize connection to Firestore and sync real-world Open Data datasets."""
+        # 1. Preload curated focal seed events & venues
         for venue in MockDataSeeder.get_seed_venues():
             self._venues_cache[venue.venue_id] = venue
         for event in MockDataSeeder.get_seed_events():
             self._events_cache[event.id] = event
 
-        logger.info(f"Loaded {len(self._events_cache)} events and {len(self._venues_cache)} venues into memory cache.")
+        logger.info(f"Preloaded {len(self._events_cache)} curated events and {len(self._venues_cache)} venues.")
 
-        # Try connecting to real GCP Firestore if configured
+        # 2. Asynchronously fetch live events from Taiwan Ministry of Culture iCulture Open Data
+        try:
+            real_events = await self._real_fetcher.fetch_taipei_events(limit_per_category=15)
+            for rev in real_events:
+                self._events_cache[rev.id] = rev
+            logger.info(f"Loaded {len(real_events)} live events from iCulture Open Data. Total catalog: {len(self._events_cache)} events.")
+        except Exception as e:
+            logger.warning(f"Could not fetch real open data events during startup: {e}")
+
+        # 3. Connect to real GCP Firestore if configured
         if settings.GCP_PROJECT_ID or os.getenv("GOOGLE_APPLICATION_CREDENTIALS"):
             try:
                 from google.cloud import firestore
