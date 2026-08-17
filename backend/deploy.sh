@@ -16,6 +16,7 @@ REGION="${GCP_REGION:-asia-east1}"
 SERVICE_NAME="${SERVICE_NAME:-sidequest-backend}"
 REPO_NAME="${REPO_NAME:-sidequest}"
 IMAGE_NAME="${IMAGE_NAME:-backend}"
+GOOGLE_CLIENT_ID="${GOOGLE_CLIENT_ID:-}"
 
 if [ -z "$PROJECT_ID" ]; then
   echo "❌ Error: GCP_PROJECT_ID is not set and no active gcloud project found."
@@ -70,7 +71,7 @@ gcloud run deploy "${SERVICE_NAME}" \
   --concurrency=80 \
   --cpu=1 \
   --memory=512Mi \
-  --set-env-vars="ENVIRONMENT=production,DEBUG=false,GCP_PROJECT_ID=${PROJECT_ID}" \
+  --set-env-vars="ENVIRONMENT=production,DEBUG=false,GCP_PROJECT_ID=${PROJECT_ID},GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}" \
   --project="${PROJECT_ID}"
 
 SERVICE_URL=$(gcloud run services describe "${SERVICE_NAME}" --platform=managed --region="${REGION}" --project="${PROJECT_ID}" --format='value(status.url)')

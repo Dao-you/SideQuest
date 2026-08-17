@@ -154,6 +154,7 @@ uv sync
 # 3. 配置環境變數
 cp .env.example .env
 # 可填入 GEMINI_API_KEY 與 GOOGLE_MAPS_API_KEY (留空時自動啟用 High-Fidelity Mock 引擎)
+# 真實 Google 登入另需填入 GOOGLE_CLIENT_ID（OAuth 2.0 Web application client）
 
 # 4. 啟動支援局域網 (LAN) 之開發伺服器 (綁定 0.0.0.0)
 uv run dev
@@ -202,6 +203,25 @@ uv run pytest -v
 ---
 
 ## 📡 API 核心端點說明
+
+### Google 帳號登入
+
+- `GET /api/v1/user/auth/config`：回傳前端 GIS 初始化所需的 Web Client ID；未設定時 `enabled=false`。
+- `POST /api/v1/user/auth/google`：只接受 Google Identity Services 回傳的 `credential`。後端會驗證 token 簽章、audience、issuer、有效期限與 `email_verified`，不接受自行填入 email/name 或未驗證 JWT。
+
+本機開發時，OAuth Web Client 的 Authorized JavaScript origins 至少需包含 `http://localhost:5173` 與 `http://127.0.0.1:5173`；測試部署則加入該分支的 Cloud Run HTTPS origin。Google Auth Platform 目前沒有可設定一般 Web Client origins 的 `gcloud` 指令，因此 client/origins 需在 Cloud Console 的 **Google Auth Platform → Clients** 建立一次，其餘 Cloud Run 設定可用 CLI 完成：
+
+```powershell
+$gcloud = 'C:\Program Files (x86)\Google\Cloud SDK\google-cloud-sdk\bin\gcloud.cmd'
+$project = 'devjam26aug17tpe-1290'
+$region = 'asia-east1'
+$clientId = '<OAuth Web Client ID>'
+
+& $gcloud services enable run.googleapis.com cloudbuild.googleapis.com artifactregistry.googleapis.com --project=$project
+& $gcloud run services update sidequest-backend-test --region=$region --project=$project --update-env-vars="GOOGLE_CLIENT_ID=$clientId"
+```
+
+Google 登入只處理身分認證（`openid/email/profile`）。Google Calendar 存取是另一個授權步驟，不應因登入成功就宣稱已取得日曆權限。
 
 ### 1. Agent 思考與推薦串流 (SSE Stream)
 - **Endpoint**: `POST /api/v1/agent/chat/stream`
