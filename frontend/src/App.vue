@@ -2,8 +2,11 @@
 import { computed, nextTick, onMounted, ref } from 'vue'
 import { Loader } from '@googlemaps/js-api-loader'
 import { Badge, Button, Chip, Input, Progress, Snackbar } from '@varlet/ui'
+import { createEventDataSource } from './data/eventDataSource'
+import { toEventPlace } from './data/eventPresentation'
 
 const MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY
+const AGENT_API_URL = import.meta.env.VITE_AGENT_API_URL || ''
 
 const mapElement = ref(null)
 const mapState = ref('loading')
@@ -13,89 +16,41 @@ const activeFilter = ref('為你推薦')
 const activePlaceId = ref('huashan')
 const prompt = ref('')
 const isExploring = ref(false)
+const eventsLoading = ref(true)
+const eventsError = ref('')
+const aiReply = ref('')
+const aiError = ref('')
 const selectedTab = ref('discover')
 const markers = new Map()
 
 const filters = ['為你推薦', '室內避暑', '低人流', '免費入場']
 const quickPrompts = ['今天下午想看展，不想太熱', '想找人少的地方散步', '今晚信義區有什麼活動？']
 
-const places = [
-  {
-    id: 'huashan',
-    name: '華山 1914 文化創意產業園區',
-    shortName: '華山 1914',
-    category: '展覽 · 室內',
-    address: '中正區八德路一段 1 號',
-    description: '今天有兩個展覽正在進行，園區周邊也有適合慢慢逛的選物店。',
-    crowd: 42,
-    sun: 18,
-    distance: '捷運 18 分鐘',
-    distanceShort: '18 min',
-    rating: '4.6',
-    time: '10:00 – 20:00',
-    color: '#e9855f',
-    position: { lat: 25.0441, lng: 121.5298 },
-    label: 'A',
-  },
-  {
-    id: 'dadaocheng',
-    name: '大稻埕碼頭・河岸散步',
-    shortName: '大稻埕碼頭',
-    category: '戶外 · 散步',
-    address: '大同區民生西路底',
-    description: '午後風勢舒服，河岸人流分散，適合沿著迪化街一路散步到碼頭。',
-    crowd: 27,
-    sun: 63,
-    distance: '捷運 24 分鐘',
-    distanceShort: '24 min',
-    rating: '4.5',
-    time: '全天開放',
-    color: '#5b8f89',
-    position: { lat: 25.0566, lng: 121.5085 },
-    label: 'B',
-  },
-  {
-    id: 'songshan',
-    name: '松山文創園區・松菸小賣所',
-    shortName: '松山文創園區',
-    category: '設計 · 選物',
-    address: '信義區光復南路 133 號',
-    description: '內容很豐富，但熱門展區目前人潮偏高，建議先逛文創小賣所。',
-    crowd: 74,
-    sun: 36,
-    distance: '捷運 31 分鐘',
-    distanceShort: '31 min',
-    rating: '4.4',
-    time: '09:00 – 18:00',
-    color: '#d9a441',
-    position: { lat: 25.0438, lng: 121.5608 },
-    label: 'C',
-  },
-  {
-    id: 'beitou',
-    name: '北投圖書館・綠建築散策',
-    shortName: '北投圖書館',
-    category: '建築 · 室內',
-    address: '北投區光明路 251 號',
-    description: '樹蔭充足、室內涼爽，適合把午後留給一本書。',
-    crowd: 19,
-    sun: 12,
-    distance: '捷運 38 分鐘',
-    distanceShort: '38 min',
-    rating: '4.8',
-    time: '09:00 – 17:00',
-    color: '#7b7bb1',
-    position: { lat: 25.1367, lng: 121.5067 },
-    label: 'D',
-  },
-]
+const places = ref([])
+const eventDataSource = createEventDataSource()
+const eventSourceLabel = eventDataSource.label
 
-const selectedPlace = computed(() => places.find((place) => place.id === activePlaceId.value) ?? places[0])
+async function loadEvents() {
+  eventsLoading.value = true
+  eventsError.value = ''
+  try {
+    const records = await eventDataSource.list()
+    places.value = records.map(toEventPlace)
+    activePlaceId.value = places.value[0]?.id ?? ''
+  } catch (error) {
+    eventsError.value = '活動 CSV 暫時無法載入，請確認前端靜態資料是否存在。'
+    console.error(error)
+  } finally {
+    eventsLoading.value = false
+  }
+}
+
+const selectedPlace = computed(() => places.value.find((place) => place.id === activePlaceId.value) ?? places.value[0])
 const visiblePlaces = computed(() => {
-  if (activeFilter.value === '低人流') return [...places].sort((a, b) => a.crowd - b.crowd)
-  if (activeFilter.value === '室內避暑') return places.filter((place) => place.sun < 40)
-  if (activeFilter.value === '免費入場') return places.filter((place) => ['dadaocheng', 'beitou'].includes(place.id))
-  return places
+  if (activeFilter.value === '低人流') return [...places.value].sort((a, b) => a.crowd - b.crowd)
+  if (activeFilter.value === '室內避暑') return places.value.filter((place) => place.isIndoor || place.sun < 40)
+  if (activeFilter.value === '免費入場') return places.value.filter((place) => place.fee.includes('免費'))
+  return places.value
 })
 
 function crowdLabel(score) {
@@ -127,15 +82,35 @@ function useQuickPrompt(value) {
   nextTick(() => document.querySelector('.prompt-input textarea, .prompt-input input')?.focus())
 }
 
-function explore() {
+async function explore() {
   if (isExploring.value) return
+  if (!prompt.value.trim()) {
+    Snackbar.warning('先告訴我你現在想怎麼感受台北')
+    return
+  }
   isExploring.value = true
-  window.setTimeout(() => {
-    isExploring.value = false
+  aiReply.value = ''
+  aiError.value = ''
+  try {
+    const response = await fetch(`${AGENT_API_URL}/api/v1/agent/ai-recommend`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: prompt.value.trim(), events: places.value }),
+    })
+    if (!response.ok) throw new Error(`Agent request failed: ${response.status}`)
+    const result = await response.json()
+    aiReply.value = result.reply || '我已收到你的需求，先從這些活動開始探索吧。'
     activeFilter.value = '為你推薦'
-    activePlaceId.value = 'huashan'
-    Snackbar.success('已依照你的感受，更新 4 個城市提案')
-  }, 700)
+    activePlaceId.value = places.value[0]?.id ?? ''
+    Snackbar.success(`Gemini 已根據 ${result.used_event_count ?? places.value.length} 個活動完成分析`)
+  } catch (error) {
+    aiError.value = AGENT_API_URL
+      ? 'Agent 暫時沒有回應，推薦卡仍可直接瀏覽。'
+      : '尚未設定 Agent API 位址；先瀏覽 CSV 活動，部署 backend 後即可啟用 Gemini。'
+    console.error(error)
+  } finally {
+    isExploring.value = false
+  }
 }
 
 function centerMap() {
@@ -185,7 +160,7 @@ async function initMap() {
       gestureHandling: 'greedy',
     })
     const { AdvancedMarkerElement } = await window.google.maps.importLibrary('marker')
-    await Promise.all(places.map((place) => addMarker(place, AdvancedMarkerElement)))
+    await Promise.all(places.value.map((place) => addMarker(place, AdvancedMarkerElement)))
     mapState.value = 'ready'
   } catch (error) {
     mapState.value = 'error'
@@ -195,7 +170,10 @@ async function initMap() {
   }
 }
 
-onMounted(initMap)
+onMounted(async () => {
+  await loadEvents()
+  await initMap()
+})
 </script>
 
 <template>
@@ -253,7 +231,10 @@ onMounted(initMap)
           <p class="eyebrow"><span class="eyebrow-dot"></span> 你的城市 Agent</p>
           <h1>今天，想怎麼感受台北？</h1>
         </div>
-        <Badge value="BETA" type="primary" class="beta-badge" />
+        <div class="header-badges">
+          <Badge value="CSV" type="success" class="data-badge" />
+          <Badge value="BETA" type="primary" class="beta-badge" />
+        </div>
       </div>
 
       <div class="prompt-composer">
@@ -278,9 +259,16 @@ onMounted(initMap)
         </button>
       </div>
 
+      <div v-if="isExploring || aiReply || aiError" class="agent-response" :class="{ failed: aiError }">
+        <div class="agent-response-heading"><span>✦</span> Vertex AI · Gemini <em v-if="isExploring">正在理解你的感受…</em></div>
+        <p v-if="isExploring" class="agent-loading-copy">正在比較 CSV 裡的活動、日期、地點與人流舒適度。</p>
+        <p v-else-if="aiError" class="agent-error-copy">{{ aiError }}</p>
+        <p v-else>{{ aiReply }}</p>
+      </div>
+
       <div class="recommendation-header">
         <div>
-          <div class="section-kicker">LIVE IN TAIPEI <span class="pulse-dot"></span></div>
+          <div class="section-kicker">{{ eventSourceLabel }} · {{ places.length }} ACTIVITIES <span class="pulse-dot"></span></div>
           <h2>為你找到的城市提案</h2>
         </div>
         <button class="view-all" @click="activeFilter = '為你推薦'">查看全部 <span>→</span></button>
@@ -299,7 +287,9 @@ onMounted(initMap)
         </Chip>
       </div>
 
-      <div class="place-list">
+      <div v-if="eventsLoading" class="events-state">正在從 taipeidope_events.csv 讀取活動…</div>
+      <div v-else-if="eventsError" class="events-state events-state-error">{{ eventsError }}</div>
+      <div v-else class="place-list">
         <article
           v-for="(place, index) in visiblePlaces"
           :key="place.id"
@@ -314,6 +304,7 @@ onMounted(initMap)
               <span class="place-distance">{{ place.distanceShort }} <span>↗</span></span>
             </div>
             <h3>{{ place.name }}</h3>
+            <div class="place-meta">{{ place.dateRange || '活動日期請見來源' }} <span>·</span> {{ place.fee }}</div>
             <p>{{ place.description }}</p>
             <div class="metric-row">
               <span class="metric crowd-metric" :class="crowdClass(place.crowd)">

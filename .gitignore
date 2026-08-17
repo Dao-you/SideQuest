@@ -24,6 +24,7 @@ wheels/
 node_modules/
 .npm-cache/
 frontend/dist/
+.codex-tmp/
 
 # Virtual Environments
 .venv/

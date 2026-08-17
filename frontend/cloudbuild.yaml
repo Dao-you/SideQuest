@@ -6,6 +6,10 @@ steps:
       - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/frontend:$BUILD_ID
       - --build-arg
       - VITE_GOOGLE_MAPS_API_KEY=${_MAPS_API_KEY}
+      - --build-arg
+      - VITE_AGENT_API_URL=${_AGENT_API_URL}
+      - --build-arg
+      - VITE_EVENT_SOURCE=${_EVENT_SOURCE}
       - .
 images:
   - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/frontend:$BUILD_ID
@@ -13,5 +17,7 @@ substitutions:
   _REGION: asia-east1
   _REPOSITORY: sidequest
   _MAPS_API_KEY: ""
+  _AGENT_API_URL: ""
+  _EVENT_SOURCE: csv
 options:
   logging: CLOUD_LOGGING_ONLY
