@@ -52,3 +52,4 @@ Kevin希望只要跟Agent說出他想要規劃一個活動，活動的時間、�
 6. 利用 Cloud Run 部署測試副本，並且在部署完成後回報網址
 7. 部署到 ID 為 devjam26aug17tpe-1290  的 Google Cloud Project
 8. if anything is hard to deploy or implement or it will take too much effort, use mock data instead. Cause this a MVP for hackthon.
+9. when branching deploy to test enviroment instead of override prod
