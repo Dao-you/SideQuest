@@ -12,6 +12,9 @@ from app.models.user import (
     CalendarSyncRequest,
     CalendarSyncResponse,
     FavoriteToggleResponse,
+    GoogleAuthConfigResponse,
+    GoogleAuthRequest,
+    GoogleAuthResponse,
     GoogleCalendarEvent,
     UpdatePreferencesRequest,
     UserProfile,
@@ -152,6 +155,16 @@ class UserServiceInterface(ABC):
     @abstractmethod
     def sync_calendar_event(self, user_id: str, req: CalendarSyncRequest) -> CalendarSyncResponse:
         """Add, overwrite, or keep both calendar events based on user resolution choice."""
+        pass
+
+    @abstractmethod
+    def login_google(self, req: GoogleAuthRequest) -> GoogleAuthResponse:
+        """Authenticate user with real Google Account identity or token."""
+        pass
+
+    @abstractmethod
+    def get_google_auth_config(self) -> GoogleAuthConfigResponse:
+        """Fetch Google OAuth 2.0 Web Client configuration."""
         pass
 
 

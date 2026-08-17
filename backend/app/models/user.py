@@ -34,6 +34,32 @@ class UserProfile(BaseModel):
     google_email: str = Field(default="kevin.sidequest@gmail.com", description="Linked Google account email")
     calendar_events: List[GoogleCalendarEvent] = Field(default_factory=list, description="Synced Google Calendar events")
     is_mock_account: bool = Field(default=True, description="Identifies mock MVP account")
+    auth_provider: str = Field(default="mock", description="Authentication provider: 'google', 'mock', or 'guest'")
+    google_sub: Optional[str] = Field(default=None, description="Google unique user subject identifier")
+
+
+class GoogleAuthRequest(BaseModel):
+    """Request to authenticate with Google Account."""
+    id_token: Optional[str] = Field(default=None, description="Google Identity Services signed JWT ID token")
+    access_token: Optional[str] = Field(default=None, description="Google OAuth 2.0 Access Token")
+    email: Optional[str] = Field(default=None, description="Verified Google email address")
+    name: Optional[str] = Field(default=None, description="Google Account user display name")
+    picture: Optional[str] = Field(default=None, description="Google profile picture avatar URL")
+    sub: Optional[str] = Field(default=None, description="Google unique subject ID")
+
+
+class GoogleAuthResponse(BaseModel):
+    """Response after authenticating with Google."""
+    success: bool = Field(..., description="Authentication status")
+    user: UserProfile = Field(..., description="Authenticated user profile")
+    message: str = Field(..., description="Status message")
+    auth_method: str = Field(default="google_oauth2", description="Authentication method used")
+
+
+class GoogleAuthConfigResponse(BaseModel):
+    """Response containing Google OAuth Web Client configuration."""
+    client_id: str = Field(..., description="Google OAuth 2.0 Web Client ID")
+    enabled: bool = Field(..., description="Whether Google OAuth is enabled")
 
 
 class MockLoginRequest(BaseModel):

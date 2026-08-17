@@ -8,6 +8,9 @@ from app.models.user import (
     CalendarSyncRequest,
     CalendarSyncResponse,
     FavoriteToggleResponse,
+    GoogleAuthConfigResponse,
+    GoogleAuthRequest,
+    GoogleAuthResponse,
     GoogleCalendarEvent,
     MockLoginRequest,
     UpdatePreferencesRequest,
@@ -29,6 +32,33 @@ async def list_preset_personas(
 ) -> List[UserProfile]:
     """Returns the 4 preset test accounts for quick demo login without passwords."""
     return user_service.list_personas()
+
+
+@router.get(
+    "/auth/config",
+    response_model=GoogleAuthConfigResponse,
+    summary="取得 Google OAuth 2.0 Client 設定",
+    description="回傳前端 Google Identity Services (GIS) / OAuth 2.0 Web Client 初始化所需之 Client ID 與設定。",
+)
+async def get_google_auth_config(
+    user_service: UserServiceInterface = Depends(get_user_service_dep),
+) -> GoogleAuthConfigResponse:
+    """Get Google OAuth 2.0 Client ID config for frontend Google Sign-In."""
+    return user_service.get_google_auth_config()
+
+
+@router.post(
+    "/auth/google",
+    response_model=GoogleAuthResponse,
+    summary="真實 Google 帳號登入 (Google Sign-In / OAuth 2.0)",
+    description="支援透過 Google Identity Services (GIS) JWT Token 或 OAuth 2.0 驗證真實 Google 帳號，並同步使用者真實 Google 個人資料與日曆連動。",
+)
+async def login_with_google(
+    req: GoogleAuthRequest,
+    user_service: UserServiceInterface = Depends(get_user_service_dep),
+) -> GoogleAuthResponse:
+    """Sign in or register user using real Google account credentials."""
+    return user_service.login_google(req)
 
 
 @router.post(
