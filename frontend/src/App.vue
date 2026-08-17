@@ -1124,7 +1124,6 @@ onMounted(async () => {
             <small>曝曬/遮蔽評估</small>
             <strong>{{ detailPlace.isIndoor ? '室內空調 (0% 曝曬)' : (detailPlace.sunLabel || `戶外曝曬 ${detailPlace.sun}%`) }}</strong>
           </div>
-          </div>
           <div>
             <span>◷</span>
             <small>預估距離</small>
