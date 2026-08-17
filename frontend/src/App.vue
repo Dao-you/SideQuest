@@ -384,7 +384,6 @@ async function renderGoogleDirections(origin, destination) {
     computeAlternativeRoutes: false,
     language: 'zh-TW',
     region: 'TW',
-    units: 'METRIC',
     fields: ['path', 'legs', 'localizedValues'],
   })
 
