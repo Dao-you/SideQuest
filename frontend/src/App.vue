@@ -20,7 +20,7 @@ const map = ref(null)
 const userLocation = ref({ ...TAIPEI_CENTER })
 const hasUserLocation = ref(false)
 const locationState = ref('idle')
-const activeFilter = ref('為你推薦')
+const activeFilter = ref('推薦')
 const activePlaceId = ref('')
 const prompt = ref('')
 const isExploring = ref(false)
@@ -78,27 +78,27 @@ const feedbackMap = ref(new Map())
 const activeRoute = ref(null)
 const routeLoading = ref(false)
 const routePreference = ref('fastest') // 'fastest' | 'wheelchair' | 'more_bus' | 'more_subway' | 'less_walking' | 'more_shading' | 'less_crowded' | 'mixed'
-const routeDepartureTime = ref('出發時間 現在')
+const routeDepartureTime = ref('現在出發')
 const showDepartureDropdown = ref(false)
 const routeOriginSwapped = ref(false)
 const selectedModalTab = ref('transit') // 'overview' | 'youbike' | 'transit' | 'taxi'
 
 const routePreferencesList = [
-  { id: 'fastest', label: '經典', icon: '🟢', desc: '最快速抵達' },
+  { id: 'fastest', label: '最快抵達', icon: '●', desc: '最快速抵達' },
   { id: 'wheelchair', label: '無障礙', icon: '♿', desc: '電梯/推車/大件行李友善' },
-  { id: 'more_bus', label: '公車+', icon: '🚌', desc: '公車直達優先' },
-  { id: 'more_subway', label: '捷運+', icon: '🚇', desc: '捷運軌道優先' },
-  { id: 'less_walking', label: '少走點', icon: '🚶', desc: '少走路/少換乘' },
-  { id: 'more_shading', label: '避曬', icon: '🛡️', desc: '地下街與林蔭遮蔽' },
-  { id: 'less_crowded', label: '避人潮', icon: '👥', desc: '舒適離峰車廂' },
-  { id: 'mixed', label: '混合', icon: '🚲', desc: 'YouBike+捷運組合' },
+  { id: 'more_bus', label: '公車優先', icon: '公', desc: '公車直達優先' },
+  { id: 'more_subway', label: '捷運優先', icon: '捷', desc: '捷運軌道優先' },
+  { id: 'less_walking', label: '少走路', icon: '走', desc: '少走路/少換乘' },
+  { id: 'more_shading', label: '較少曝曬', icon: '蔭', desc: '地下街與林蔭遮蔽' },
+  { id: 'less_crowded', label: '避開人潮', icon: '人', desc: '舒適離峰車廂' },
+  { id: 'mixed', label: '混合交通', icon: '混', desc: 'YouBike+捷運組合' },
 ]
 
 const departureTimeOptions = [
-  '出發時間 現在',
-  '出發時間 10 分鐘後',
-  '出發時間 30 分鐘後',
-  '出發時間 1 小時後',
+  '現在出發',
+  '10 分鐘後出發',
+  '30 分鐘後出發',
+  '1 小時後出發',
 ]
 
 let currentPolyline = null
@@ -130,10 +130,15 @@ let sheetDragStartHeight = 0
 let mapFocusTimer = null
 
 const filters = computed(() => {
-  const base = ['為你推薦', '室內避暑', '低人流', '免費入場']
+  const base = ['推薦', '室內', '低人流', '免費']
+  const tagLabelMap = {
+    室內避暑: '室內',
+    免費入場: '免費',
+  }
   if (quickTags.value.length > 0) {
     quickTags.value.forEach((tag) => {
-      if (!base.includes(tag.label)) base.push(tag.label)
+      const label = tagLabelMap[tag.label] || tag.label
+      if (!base.includes(label)) base.push(label)
     })
   }
   return base
@@ -173,10 +178,10 @@ const visiblePlaces = computed(() => {
       .filter((place) => Number.isFinite(place.crowd))
       .sort((a, b) => a.crowd - b.crowd)
   }
-  if (activeFilter.value === '室內避暑') {
+  if (activeFilter.value === '室內') {
     return places.value.filter((place) => place.isIndoor)
   }
-  if (activeFilter.value === '免費入場') {
+  if (activeFilter.value === '免費') {
     return places.value.filter((place) => place.fee.includes('免費'))
   }
   // If filter matches a category
@@ -338,7 +343,7 @@ async function loadEvents() {
       syncMarkerSelection()
     }
   } catch (error) {
-    eventsError.value = '活動目錄暫時無法載入，請確認後端服務或網路連線。'
+    eventsError.value = '活動清單暫時無法載入，請稍後再試。'
     console.error(error)
   } finally {
     eventsLoading.value = false
@@ -412,7 +417,7 @@ function selectPlace(place) {
 async function openPlaceDetails(place) {
   resetRouteState()
   detailPlaceId.value = place.id
-  sheetExpanded.value = false
+  sheetExpanded.value = true
   sheetMinimized.value = false
   selectPlace(place)
   await nextTick()
@@ -422,6 +427,7 @@ async function openPlaceDetails(place) {
 async function closePlaceDetails() {
   resetRouteState()
   detailPlaceId.value = ''
+  sheetExpanded.value = false
   await nextTick()
   sheetElement.value?.scrollTo({ top: 0, behavior: 'smooth' })
 }
@@ -477,7 +483,7 @@ function formatZhTwStepInstruction(step, actualMode) {
     if (travelModeStr.includes('BICYCLE') || actualMode === window.google?.maps?.TravelMode?.BICYCLING) {
       return '沿自行車專用道／市區林蔭道路騎乘 YouBike 前進'
     }
-    return '依 Google Maps 路線前進'
+    return '依地圖路線前進'
   }
 
   // Comprehensive Google Directions English -> zh-TW dictionary replacement
@@ -762,7 +768,7 @@ async function planRouteToPlace(place) {
       activeRoute.value = {
         ...route,
         pathUnavailable: true,
-        routeAdvice: `${route.routeAdvice} Google Maps 實際路徑暫時無法繪製，請開啟導航確認道路與班次。`,
+        routeAdvice: `${route.routeAdvice} 路徑細節暫時無法繪製，請開啟導航確認道路與班次。`,
       }
       Snackbar.warning(`${activeShadeScenario.value.label}遮蔭情境已產生，地圖路徑暫未繪製`)
       return
@@ -848,7 +854,7 @@ async function toggleHeatmap() {
         }))
       })
       heatmapIsMock.value = points.every((point) => point.data_source !== 'live')
-      Snackbar.success(heatmapIsMock.value ? '已開啟 MVP 模擬人潮圖層' : '已開啟人潮圖層')
+    Snackbar.success(heatmapIsMock.value ? '已顯示示意人流' : '已開啟人流圖層')
     } catch (err) {
       console.error('Heatmap load error:', err)
       heatmapVisible.value = false
@@ -930,7 +936,7 @@ function useQuickPrompt(value) {
 async function explore() {
   if (isExploring.value) return
   if (!prompt.value.trim()) {
-    Snackbar.warning('先告訴我你現在想怎麼感受台北')
+    Snackbar.warning('請先輸入想找的活動')
     return
   }
 
@@ -1006,9 +1012,9 @@ async function explore() {
     await nextTick()
     document.querySelector('.agent-recommendations-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 
-    Snackbar.success(`Agent 已完成分析與多準則推薦`)
+    Snackbar.success('推薦已更新')
   } catch (error) {
-    aiError.value = 'Agent 暫時沒有回應，推薦卡仍可直接瀏覽。'
+    aiError.value = '推薦暫時無法更新，仍可直接瀏覽活動清單。'
     console.error(error)
   } finally {
     isExploring.value = false
@@ -1020,6 +1026,10 @@ function formatAgentEventDate(event) {
   const start = new Date(event.start_time)
   if (Number.isNaN(start.getTime())) return ''
   return start.toLocaleString('zh-TW', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+}
+
+function cleanUiLabel(label, fallback = '') {
+  return String(label || fallback).replace(/^[^\p{L}\p{N}]+/u, '').trim()
 }
 
 // PRD Section 6 Stage 10 Feedback
@@ -1154,13 +1164,13 @@ async function initMap() {
   mapState.value = 'loading'
   window.gm_authFailure = () => {
     mapState.value = 'error'
-    mapError.value = 'Google Maps 認證授權中，正在套用專案網域白名單…'
+    mapError.value = '地圖暫時無法顯示，活動清單仍可使用。'
   }
 
   const mapsApiKey = rawEnvMapsKey
   if (!mapsApiKey) {
     mapState.value = 'error'
-    mapError.value = '尚未設定 Google Maps API key (請設定 GCP 專案環境變數)'
+    mapError.value = '地圖暫時無法顯示，活動清單仍可使用。'
     return
   }
 
@@ -1194,9 +1204,7 @@ async function initMap() {
     mapState.value = 'ready'
   } catch (error) {
     mapState.value = 'error'
-    mapError.value = error?.message?.includes('RefererNotAllowedMapError')
-      ? '此網址尚未加入 API key 的允許來源'
-      : 'Google Maps 載入失敗，請檢查 API key 與 Maps JavaScript API 是否啟用'
+    mapError.value = '地圖暫時無法顯示，活動清單仍可使用。'
   }
 }
 
@@ -1219,11 +1227,11 @@ onMounted(async () => {
       <div ref="mapElement" class="google-map"></div>
       <div v-if="mapState === 'loading'" class="map-state map-loading">
         <div class="loader-orbit"></div>
-        <span>正在連線 Google Maps 與台北微氣候…</span>
+          <span>正在載入地圖…</span>
       </div>
       <div v-if="mapState === 'error'" class="map-state map-error">
         <span class="error-mark">!</span>
-        <strong>Google Maps 暫時無法載入</strong>
+         <strong>地圖暫時無法顯示</strong>
         <small>{{ mapError }}</small>
       </div>
 
@@ -1233,12 +1241,12 @@ onMounted(async () => {
           <div class="brand-mark">SQ</div>
           <div>
             <div class="brand-name">sidequest<span>.</span></div>
-            <div class="brand-caption">城市裡的下一站 · AI Agent</div>
+            <div class="brand-caption">城市裡的下一站</div>
           </div>
         </div>
         <div class="topbar-actions">
           <button class="city-pill" @click="centerMap" aria-label="切換城市或置中">
-            <span class="status-dot"></span> Taipei City <span class="caret">⌄</span>
+            <span class="status-dot"></span> 台北市 <span class="caret">⌄</span>
           </button>
           <button
             class="avatar-button"
@@ -1252,7 +1260,7 @@ onMounted(async () => {
       </header>
 
       <!-- Live Microclimate & Solar Pill -->
-      <div class="map-context-pill" @click="loadWeather" title="點擊重新取得微氣候資料">
+       <div class="map-context-pill" @click="loadWeather" title="重新整理天氣與日照資料">
         <span class="context-icon">☀</span>
         <div>
           <strong>{{ weather.temperature }}°C</strong>
@@ -1264,7 +1272,7 @@ onMounted(async () => {
           <span>{{ weather.sunExposureLevel === 'HIGH' ? '高曝曬' : '中等日照' }}</span>
         </div>
         <div class="refresh-label" :class="{ spinning: weatherLoading }">
-          {{ weather.isMock ? '模擬環境' : '即時更新' }}
+           {{ weather.isMock ? '示意資料' : '即時資料' }}
         </div>
       </div>
 
@@ -1282,7 +1290,7 @@ onMounted(async () => {
         aria-label="切換人潮熱力圖圖層"
         @click="toggleHeatmap"
       >
-        🔥
+        ◌
       </button>
       <div class="map-control-stack">
         <button class="map-control" aria-label="放大地圖" @click="map?.setZoom((map?.getZoom() ?? 12) + 1)">＋</button>
@@ -1302,7 +1310,7 @@ onMounted(async () => {
       <div class="map-legend">
         <span><b class="legend-dot legend-cool"></b>人流舒適 (&lt;35)</span>
         <span><b class="legend-dot legend-warm"></b>人潮熱門 (&gt;65)</span>
-        <span v-if="heatmapVisible && heatmapIsMock">MVP 模擬人流</span>
+         <span v-if="heatmapVisible && heatmapIsMock">示意資料</span>
       </div>
     </section>
 
@@ -1326,7 +1334,6 @@ onMounted(async () => {
           @pointercancel="endSheetDrag"
         >
           <span class="sheet-handle"></span>
-          <small>{{ sheetHandleLabel }}</small>
         </button>
         <button
           v-if="!sheetMinimized"
@@ -1341,7 +1348,7 @@ onMounted(async () => {
       <article v-if="detailPlace" class="place-detail-view">
         <header class="detail-header">
           <button type="button" class="detail-back" aria-label="返回活動列表" @click="closePlaceDetails">←</button>
-          <span>ACTIVITY DETAIL · {{ detailPlace.label }}</span>
+           <span>活動詳情</span>
           <button type="button" class="detail-close" aria-label="關閉詳細資料" @click="closePlaceDetails">×</button>
         </header>
 
@@ -1389,7 +1396,7 @@ onMounted(async () => {
                 class="route-time-btn"
                 @click="showDepartureDropdown = !showDepartureDropdown"
               >
-                <span>🕒</span>
+                 <span>◷</span>
                 <strong>{{ routeDepartureTime }}</strong>
                 <span class="chevron">⌄</span>
               </button>
@@ -1417,7 +1424,7 @@ onMounted(async () => {
                 <span class="od-dot origin-dot"></span>
                 <div class="od-text">
                   <small>起點</small>
-                  <strong>{{ routeOriginSwapped ? detailPlace.name : '當前位置 (台北市區 / 吳興街)' }}</strong>
+                   <strong>{{ routeOriginSwapped ? detailPlace.name : '目前位置（台北市區）' }}</strong>
                 </div>
               </div>
               <div class="od-connector"></div>
@@ -1425,7 +1432,7 @@ onMounted(async () => {
                 <span class="od-dot dest-dot"></span>
                 <div class="od-text">
                   <small>目的地</small>
-                  <strong>{{ routeOriginSwapped ? '當前位置 (台北市區)' : detailPlace.name }}</strong>
+                   <strong>{{ routeOriginSwapped ? '目前位置（台北市區）' : detailPlace.name }}</strong>
                 </div>
               </div>
             </div>
@@ -1518,7 +1525,7 @@ onMounted(async () => {
               <span>📍 {{ activeRoute.multimodal?.bike_station || '周邊租賃站點' }} · 可借 5 輛 / 可還 12 位</span>
             </div>
             <p class="option-desc">
-              🌱 沿著林蔭單車專用道前行，預估燃燒 <strong>{{ activeRoute.multimodal?.bike_calories || 128 }}</strong> 大卡，享受微風與低碳生活。
+              沿著林蔭單車道前行，預估消耗 <strong>{{ activeRoute.multimodal?.bike_calories || 128 }}</strong> 大卡。
             </p>
           </div>
 
@@ -1575,7 +1582,7 @@ onMounted(async () => {
           <div class="taxi-option-card">
             <div class="option-card-header">
               <div class="option-title-group">
-                <span class="badge-taxi">🚕 計程車 / 專車直達</span>
+                <span class="badge-taxi">計程車／專車直達</span>
                 <span class="option-price">約 NT$ {{ activeRoute.multimodal?.taxi_cost_twd || 195 }}</span>
               </div>
               <div class="option-duration">
@@ -1590,7 +1597,7 @@ onMounted(async () => {
                 rel="noopener noreferrer"
                 class="taxi-nav-btn"
               >
-                <span>🗺️</span> 在 Google Maps 開啟即時導航
+                <span>↗</span> 開啟導航
               </a>
             </div>
           </div>
@@ -1601,7 +1608,7 @@ onMounted(async () => {
             <span>♧</span>
             <small>目前人流</small>
             <strong :class="crowdClass(detailPlace.crowd)">
-              {{ crowdLabel(detailPlace.crowd) }}<template v-if="Number.isFinite(detailPlace.crowd)"> ({{ detailPlace.crowd }}){{ detailPlace.crowdIsMock ? ' · 模擬' : '' }}</template>
+              {{ crowdLabel(detailPlace.crowd) }}<template v-if="Number.isFinite(detailPlace.crowd)"> ({{ detailPlace.crowd }}){{ detailPlace.crowdIsMock ? '（示意）' : '' }}</template>
             </strong>
           </div>
           <div>
@@ -1628,7 +1635,7 @@ onMounted(async () => {
         </section>
 
         <section class="detail-section">
-          <div class="detail-section-heading"><span>02</span><h2>亮點與為什麼值得去</h2></div>
+          <div class="detail-section-heading"><span>02</span><h2>活動亮點</h2></div>
           <p>{{ detailPlace.description }}</p>
           <div v-if="detailPlace.admission" class="detail-tip">
             <span>↳</span>
@@ -1641,11 +1648,11 @@ onMounted(async () => {
       <div v-else class="sheet-discover-view">
         <div class="sheet-header">
           <div>
-            <p class="eyebrow"><span class="eyebrow-dot"></span> 你的城市 Agent · {{ activePersona.name }}</p>
+            <p class="eyebrow"><span class="eyebrow-dot"></span> 為你探索 · {{ activePersona.name }}</p>
             <h1>今天，想怎麼感受台北？</h1>
           </div>
           <div class="header-badges">
-            <Badge :value="eventSourceLabel" type="success" class="data-badge" />
+            <Badge value="活動資料" type="success" class="data-badge" />
           </div>
         </div>
 
@@ -1658,11 +1665,11 @@ onMounted(async () => {
             textarea
             :rows="1"
             :resize="false"
-            placeholder="告訴我你現在的感受，例如：想找室內展覽，不要太熱、人不要太多…"
+            placeholder="告訴我你想找什麼活動？"
             @keydown.enter.exact.prevent="explore"
           />
           <Button class="explore-button" type="primary" round :loading="isExploring" @click="explore">
-            <span v-if="!isExploring">探索 <span class="button-arrow">↗</span></span>
+            <span v-if="!isExploring">開始探索</span>
           </Button>
         </div>
 
@@ -1675,7 +1682,7 @@ onMounted(async () => {
             type="button"
             @click="useQuickPrompt(item)"
           >
-            {{ item }} <span>↗</span>
+            {{ item }}
           </button>
         </div>
 
@@ -1683,18 +1690,18 @@ onMounted(async () => {
         <div v-if="isExploring || aiReply || aiError || aiThoughtSteps.length" class="agent-response" :class="{ failed: aiError }">
           <div class="agent-response-heading">
             <span>✦</span> 推薦分析
-            <em v-if="isExploring">正在即時推理台北活動、微氣候與捷運連通…</em>
+            <em v-if="isExploring">正在整理活動、天氣與交通…</em>
           </div>
 
           <!-- Structured Understanding Criteria (PRD 7.3) -->
           <div v-if="aiParsedCriteria" class="parsed-criteria-row">
             <span class="criteria-badge">時段：{{ aiParsedCriteria.date_time_range || '今日' }}</span>
-            <span v-if="aiParsedCriteria.requested_date" class="criteria-badge criteria-date-badge">📅 已鎖定 {{ aiParsedCriteria.requested_date }}</span>
-            <span v-if="aiParsedCriteria.occasion" class="criteria-badge">💛 {{ aiParsedCriteria.occasion }}</span>
+            <span v-if="aiParsedCriteria.requested_date" class="criteria-badge criteria-date-badge">已鎖定 {{ aiParsedCriteria.requested_date }}</span>
+            <span v-if="aiParsedCriteria.occasion" class="criteria-badge">{{ aiParsedCriteria.occasion }}</span>
             <span v-if="aiParsedCriteria.target_district" class="criteria-badge">區域：{{ aiParsedCriteria.target_district }}</span>
-            <span v-if="aiParsedCriteria.avoid_crowd" class="criteria-badge">🍃 避開人潮優先</span>
-            <span v-if="aiParsedCriteria.prefer_indoor" class="criteria-badge">❄ 室內避暑</span>
-            <span v-if="aiParsedCriteria.is_free_only" class="criteria-badge">🎟 免費入場</span>
+            <span v-if="aiParsedCriteria.avoid_crowd" class="criteria-badge">避開人潮</span>
+            <span v-if="aiParsedCriteria.prefer_indoor" class="criteria-badge">室內</span>
+            <span v-if="aiParsedCriteria.is_free_only" class="criteria-badge">免費入場</span>
           </div>
 
           <!-- Collapsible Agent Thought Trace -->
@@ -1704,8 +1711,8 @@ onMounted(async () => {
               class="thought-toggle-btn"
               @click="showThoughtTrace = !showThoughtTrace"
             >
-              <span>🧠 Agent 決策推論軌跡 ({{ aiThoughtSteps.length }} 步)</span>
-              <small>{{ showThoughtTrace ? '收合 ▲' : '展開 ▼' }}</small>
+              <span>查看分析依據（{{ aiThoughtSteps.length }} 項）</span>
+              <small>{{ showThoughtTrace ? '收合' : '展開' }}</small>
             </button>
             <div v-if="showThoughtTrace" class="thought-steps-list">
               <div v-for="step in aiThoughtSteps" :key="step.step" class="thought-step-item">
@@ -1719,19 +1726,19 @@ onMounted(async () => {
           </div>
 
           <!-- Agent Markdown Stream Output -->
-          <p v-if="isExploring && !aiReply" class="agent-loading-copy">正在透過 SideQuest 多準則引擎評估活動與交通條件…</p>
+          <p v-if="isExploring && !aiReply" class="agent-loading-copy">正在整理適合你的活動…</p>
           <p v-else-if="aiError" class="agent-error-copy">{{ aiError }}</p>
           <p v-else class="agent-markdown-text">{{ aiReply }}</p>
         </div>
 
         <!-- 3 PRD Recommendation Cards (PRD 7.4 & 8.3) -->
-        <section v-if="aiRecommendations.length" class="agent-recommendations-section" aria-label="3 大推薦卡片">
+        <section v-if="aiRecommendations.length" class="agent-recommendations-section" aria-label="推薦方案">
           <div class="agent-rec-header">
             <div>
-              <span class="rec-kicker">PRD 3-TIER RECOMMENDATIONS</span>
-              <h2>城市決策提案</h2>
+              <span class="rec-kicker">推薦方案</span>
+              <h2>適合你的活動</h2>
             </div>
-            <strong>共評估 {{ aiEvaluatedCount || places.length }} 個符合日期的活動</strong>
+            <strong>已比較 {{ aiEvaluatedCount || places.length }} 個活動</strong>
           </div>
 
           <div class="recommendations-grid">
@@ -1740,10 +1747,13 @@ onMounted(async () => {
               :key="`card-${card.event?.id || idx}`"
               class="rec-card"
               :class="`role-${card.card_role?.toLowerCase()}`"
+              role="button"
+              tabindex="0"
               @click="card.event?.id && openPlaceDetails(places.find(p => p.id === card.event.id) || card.event)"
+              @keydown.enter="card.event?.id && openPlaceDetails(places.find(p => p.id === card.event.id) || card.event)"
             >
               <div class="rec-card-top">
-                <span class="rec-role-badge">{{ card.card_role_label || '🎯 推薦選擇' }}</span>
+                <span class="rec-role-badge">{{ cleanUiLabel(card.card_role_label, '推薦選擇') }}</span>
                 <div class="rec-score-pill">
                   <span>綜合得分</span>
                   <strong>{{ Math.round(card.total_score || 90) }}</strong>
@@ -1751,7 +1761,7 @@ onMounted(async () => {
               </div>
 
               <h3 class="rec-card-title">{{ card.event?.title }}</h3>
-              <div v-if="formatAgentEventDate(card.event)" class="rec-card-date">📅 {{ formatAgentEventDate(card.event) }}</div>
+              <div v-if="formatAgentEventDate(card.event)" class="rec-card-date">{{ formatAgentEventDate(card.event) }}</div>
               <p class="rec-card-reason">{{ card.recommendation_reason }}</p>
 
               <!-- Dispersal Badges -->
@@ -1784,16 +1794,18 @@ onMounted(async () => {
                     type="button"
                     class="feedback-btn"
                     :class="{ active: feedbackMap.get(card.event?.id)?.isHelpful === true }"
-                    title="推薦精準，很喜歡"
+                    aria-label="這個推薦有幫助"
+                    title="這個推薦有幫助"
                     @click="handleFeedback(card.event?.id, true, 'accurate')"
-                  >👍</button>
+                  >✓</button>
                   <button
                     type="button"
                     class="feedback-btn"
                     :class="{ active: feedbackMap.get(card.event?.id)?.isHelpful === false }"
+                    aria-label="這個推薦不適合"
                     title="人潮偏多或距離較遠"
                     @click="handleFeedback(card.event?.id, false, 'too_crowded')"
-                  >👎</button>
+                  >×</button>
                 </div>
               </div>
             </article>
@@ -1802,7 +1814,7 @@ onMounted(async () => {
           <div v-if="aiDispersalSummary" class="dispersal-insight-pill">
             <span class="insight-icon">↝</span>
             <div>
-              <strong>人流疏導洞察</strong>
+              <strong>人流建議</strong>
               <p>{{ aiDispersalSummary }}</p>
             </div>
           </div>
@@ -1812,18 +1824,18 @@ onMounted(async () => {
         <div class="recommendation-header">
           <div>
             <div class="section-kicker">
-              {{ selectedTab === 'saved' ? 'MY BOOKMARKS' : `${eventSourceLabel} · ${places.length} ACTIVITIES` }}
+               {{ selectedTab === 'saved' ? '已收藏' : `活動清單 · ${places.length} 項` }}
               <span class="pulse-dot"></span>
             </div>
-            <h2>{{ selectedTab === 'saved' ? '我的收藏活動' : '全部城市探索清單' }}</h2>
+             <h2>{{ selectedTab === 'saved' ? '已收藏的活動' : '探索活動' }}</h2>
           </div>
           <button
             v-if="selectedTab !== 'saved'"
             class="view-all"
             type="button"
-            @click="activeFilter = '為你推薦'"
+             @click="activeFilter = '推薦'"
           >
-            重置篩選 <span>↺</span>
+             清除篩選
           </button>
         </div>
 
@@ -1843,11 +1855,11 @@ onMounted(async () => {
 
         <!-- Empty state for Bookmarks -->
         <div v-if="selectedTab === 'saved' && bookmarkedPlaces.length === 0" class="events-state">
-          你尚未收藏任何活動，點擊活動卡片中的「♡」即可加入個人清單！
+           還沒有收藏活動。點擊卡片右上角的收藏即可加入。
         </div>
 
         <!-- Events List -->
-        <div v-else-if="eventsLoading" class="events-state">正在同步台北活動與即時人流…</div>
+        <div v-else-if="eventsLoading" class="events-state">正在載入活動…</div>
         <div v-else-if="eventsError" class="events-state events-state-error">{{ eventsError }}</div>
         <div v-else class="place-list">
           <article
@@ -1855,13 +1867,16 @@ onMounted(async () => {
             :key="place.id"
             class="place-card"
             :class="{ selected: activePlaceId === place.id }"
+            role="button"
+            tabindex="0"
             @click="openPlaceDetails(place)"
+            @keydown.enter="openPlaceDetails(place)"
           >
-            <div class="place-number">0{{ index + 1 }}</div>
+             <div class="place-number">{{ String(index + 1).padStart(2, '0') }}</div>
             <div class="place-main">
               <div class="place-topline">
                 <span class="place-category">{{ place.category }}</span>
-                <span class="place-distance">{{ place.distanceShort }} <span>↗</span></span>
+                 <span class="place-distance">{{ place.distanceShort }}</span>
               </div>
               <h3>{{ place.name }}</h3>
               <div class="place-meta">{{ place.dateRange || '當期活動' }} <span>·</span> {{ place.fee }}</div>
@@ -1884,7 +1899,7 @@ onMounted(async () => {
               type="button"
               class="bookmark-card-btn"
               :class="{ active: favoritePlaceIds.has(place.id) }"
-              title="收藏活動"
+               :aria-label="favoritePlaceIds.has(place.id) ? '取消收藏' : '收藏活動'"
               @click.stop="toggleBookmark(place)"
             >
               {{ favoritePlaceIds.has(place.id) ? '♥' : '♡' }}
@@ -1897,8 +1912,8 @@ onMounted(async () => {
         <div class="shade-scenario-copy">
           <span class="shade-scenario-icon" aria-hidden="true">◒</span>
           <div>
-            <strong id="shade-scenario-title">Demo 時段</strong>
-            <small>固定情境 · {{ activeShadeScenario.time }}</small>
+             <strong id="shade-scenario-title">日照情境</strong>
+             <small>以 {{ activeShadeScenario.time }} 計算</small>
           </div>
         </div>
         <div class="shade-scenario-switch" role="group" aria-label="選擇遮蔭估算時段">
@@ -1922,19 +1937,22 @@ onMounted(async () => {
       <div class="persona-modal">
         <header class="persona-modal-header">
           <div>
-            <span>DEMO LOGIN · PRD 7.1</span>
-            <h2>選擇測試 Persona 角色</h2>
+             <span>示範帳號</span>
+             <h2>切換使用者</h2>
           </div>
           <button type="button" class="modal-close-btn" @click="showPersonaModal = false">×</button>
         </header>
-        <p class="persona-intro">免密碼切換預設測試角色，立即體驗個人化推薦、收藏清單與自訂人流偏好：</p>
+         <p class="persona-intro">選擇一個示範帳號，套用它的偏好與收藏清單。</p>
         <div class="personas-grid">
           <div
             v-for="p in personas"
             :key="p.id"
             class="persona-card"
             :class="{ active: activePersona.id === p.id }"
+            role="button"
+            tabindex="0"
             @click="switchPersona(p)"
+            @keydown.enter="switchPersona(p)"
           >
             <div class="persona-avatar">{{ p.name.slice(0, 2) }}</div>
             <div class="persona-details">
@@ -1942,7 +1960,7 @@ onMounted(async () => {
               <div class="persona-tags">
                 <span v-for="t in p.interest_tags" :key="t">{{ t }}</span>
               </div>
-              <small>{{ p.prefer_indoor ? '❄ 偏好室內' : '☀ 接受戶外' }} · {{ p.avoid_crowd ? '🍃 避開人潮' : '👥 喜愛熱鬧' }} · 預算上限 NT${{ p.budget_twd_cap }}</small>
+              <small>{{ p.prefer_indoor ? '偏好室內' : '可接受戶外' }} · {{ p.avoid_crowd ? '避開人潮' : '喜愛熱鬧' }} · 預算上限 NT${{ p.budget_twd_cap }}</small>
             </div>
           </div>
         </div>
@@ -1958,7 +1976,7 @@ onMounted(async () => {
         <span>♥</span>收藏 ({{ favoritePlaceIds.size }})
       </button>
       <button :class="{ active: selectedTab === 'profile' }" @click="showPersonaModal = true">
-        <span>👤</span>{{ activePersona.name.slice(0, 3) }}
+        <span>◎</span>{{ activePersona.name.slice(0, 3) }}
       </button>
     </nav>
   </main>
