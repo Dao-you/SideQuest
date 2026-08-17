@@ -41,6 +41,32 @@ class MicroclimateResponse(BaseModel):
     indoor_recommended: bool = Field(default=False, description="Whether indoor activities are strongly advised")
 
 
+class GoogleSolarBuildingInsights(BaseModel):
+    """Google Maps Platform Solar API Building Insights."""
+    name: Optional[str] = Field(default=None, description="Google Solar Building Resource Name")
+    imagery_quality: str = Field(default="BASE", description="Data Quality Tier: BASE | MEDIUM | HIGH")
+    imagery_date: Optional[str] = Field(default=None, description="Satellite / Aerial capture date")
+    max_sunshine_hours_per_year: float = Field(default=0.0, description="Max annual sunshine hours")
+    carbon_offset_factor_kg_per_mwh: float = Field(default=500.0, description="Carbon offset potential")
+    building_roof_area_m2: float = Field(default=0.0, description="Usable rooftop area in m²")
+    ground_area_m2: float = Field(default=0.0, description="Building ground footprint in m²")
+    max_array_panels_count: int = Field(default=0, description="Max solar panel installation capacity")
+    solar_potential_rating: str = Field(default="OPTIMAL", description="Solar energy and direct sun exposure classification")
+
+
+class GoogleSolarDataLayers(BaseModel):
+    """Google Maps Platform Solar API High-Resolution GeoTIFF Data Layers."""
+    imagery_quality: str = Field(default="BASE", description="Data Quality Tier: BASE | MEDIUM | HIGH")
+    imagery_date: Optional[str] = Field(default=None, description="Imagery capture date")
+    dsm_url: Optional[str] = Field(default=None, description="3D Digital Surface Model (DSM) GeoTIFF URL")
+    rgb_url: Optional[str] = Field(default=None, description="High-resolution aerial/satellite visual GeoTIFF URL")
+    mask_url: Optional[str] = Field(default=None, description="Building rooftop mask GeoTIFF URL")
+    annual_flux_url: Optional[str] = Field(default=None, description="Annual solar radiation flux map GeoTIFF URL")
+    monthly_flux_url: Optional[str] = Field(default=None, description="Monthly solar radiation flux map GeoTIFF URL")
+    hourly_shade_urls: list[str] = Field(default_factory=list, description="12 monthly hourly shadow and shade GeoTIFF URLs")
+    is_available: bool = Field(default=True, description="Whether Google Solar Data Layers are accessible for coordinate")
+
+
 class SolarExposureResponse(BaseModel):
     """Solar irradiance and shade coverage analysis."""
     latitude: float
@@ -50,3 +76,7 @@ class SolarExposureResponse(BaseModel):
     sun_exposure_level: str = Field(..., description="LOW | MODERATE | HIGH | EXTREME")
     sunscreen_recommendation: str = Field(..., description="Actionable sun safety advice")
     best_transit_mode: str = Field(default="transit_underground", description="Optimal route preference for sun avoidance")
+    google_solar_available: bool = Field(default=False, description="Whether Google Solar API data is active for this location")
+    google_building_insights: Optional[GoogleSolarBuildingInsights] = Field(default=None, description="Google Solar rooftop and 3D insights")
+    google_data_layers: Optional[GoogleSolarDataLayers] = Field(default=None, description="Google Solar GeoTIFF raster layers (DSM & Hourly Shade)")
+

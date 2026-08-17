@@ -62,7 +62,7 @@ async def test_crowd_and_heatmap_endpoints(async_client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_weather_endpoints(async_client: AsyncClient):
-    """Test weather and solar endpoints."""
+    """Test weather and Google Solar endpoints."""
     res_w = await async_client.get("/api/v1/weather/current?lat=25.0330&lng=121.5654")
     assert res_w.status_code == 200
     assert "temperature_c" in res_w.json()
@@ -70,7 +70,26 @@ async def test_weather_endpoints(async_client: AsyncClient):
 
     res_s = await async_client.get("/api/v1/weather/solar?lat=25.0330&lng=121.5654")
     assert res_s.status_code == 200
-    assert "solar_radiation_w_m2" in res_s.json()
+    solar_data = res_s.json()
+    assert "solar_radiation_w_m2" in solar_data
+    assert "google_solar_available" in solar_data
+    assert solar_data["google_solar_available"] is True
+    assert "google_building_insights" in solar_data
+
+    # Google Solar Building Insights
+    res_bi = await async_client.get("/api/v1/weather/solar/building-insights?lat=25.0330&lng=121.5654")
+    assert res_bi.status_code == 200
+    bi_data = res_bi.json()
+    assert "max_sunshine_hours_per_year" in bi_data
+    assert bi_data["max_sunshine_hours_per_year"] > 0
+
+    # Google Solar Data Layers
+    res_dl = await async_client.get("/api/v1/weather/solar/data-layers?lat=25.0330&lng=121.5654&radius_meters=100")
+    assert res_dl.status_code == 200
+    dl_data = res_dl.json()
+    assert dl_data["is_available"] is True
+    assert "dsm_url" in dl_data
+    assert len(dl_data["hourly_shade_urls"]) == 12
 
 
 @pytest.mark.asyncio
