@@ -12,6 +12,7 @@
 - 測試網址：<https://sidequest-demo-ui-polish-cjpexdy77a-de.a.run.app>
 - 測試 image：`frontend-ui-polish`
 - 地圖修正驗證：Cloud Build `7041d8b4-7919-4f9a-8b46-fdff6f2c8a0f` 成功，revision `sidequest-demo-ui-polish-00002-9vb` 已載入 Google Maps 與活動標記
+- 品牌更新驗證：Cloud Build `4e20a684-7289-4316-85c1-3d5de5162b75` 成功，revision `sidequest-demo-ui-polish-00003-lx9` 已載入透明 SideQuest 圖形標誌與新版左上角品牌區
 
 ## 建議合併流程
 
