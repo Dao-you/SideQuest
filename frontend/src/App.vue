@@ -1126,29 +1126,6 @@ onMounted(async () => {
         >⌄</button>
       </div>
 
-      <section v-if="!sheetMinimized" class="shade-scenario-panel" aria-labelledby="shade-scenario-title">
-        <div class="shade-scenario-copy">
-          <span class="shade-scenario-icon" aria-hidden="true">◒</span>
-          <div>
-            <strong id="shade-scenario-title">遮蔭驗收時段</strong>
-            <small>{{ activeShadeScenario.time }} · {{ activeShadeScenario.description }} · 固定情境資料</small>
-          </div>
-        </div>
-        <div class="shade-scenario-switch" role="group" aria-label="選擇遮蔭估算時段">
-          <button
-            v-for="scenario in SHADE_TIME_SCENARIOS"
-            :key="scenario.id"
-            type="button"
-            :class="{ active: shadeTimePeriod === scenario.id }"
-            :aria-pressed="shadeTimePeriod === scenario.id"
-            @click="selectShadeTimePeriod(scenario.id)"
-          >
-            <strong>{{ scenario.label }}</strong>
-            <small>{{ scenario.time }}</small>
-          </button>
-        </div>
-      </section>
-
       <!-- Activity Detail View -->
       <article v-if="detailPlace" class="place-detail-view">
         <header class="detail-header">
@@ -1515,6 +1492,29 @@ onMounted(async () => {
           </article>
         </div>
       </div>
+
+      <section v-if="!sheetMinimized" class="shade-scenario-panel" aria-labelledby="shade-scenario-title">
+        <div class="shade-scenario-copy">
+          <span class="shade-scenario-icon" aria-hidden="true">◒</span>
+          <div>
+            <strong id="shade-scenario-title">Demo 時段</strong>
+            <small>固定情境 · {{ activeShadeScenario.time }}</small>
+          </div>
+        </div>
+        <div class="shade-scenario-switch" role="group" aria-label="選擇遮蔭估算時段">
+          <button
+            v-for="scenario in SHADE_TIME_SCENARIOS"
+            :key="scenario.id"
+            type="button"
+            :class="{ active: shadeTimePeriod === scenario.id }"
+            :aria-pressed="shadeTimePeriod === scenario.id"
+            @click="selectShadeTimePeriod(scenario.id)"
+          >
+            <strong>{{ scenario.label }}</strong>
+            <small>{{ scenario.time }}</small>
+          </button>
+        </div>
+      </section>
     </section>
 
     <!-- Persona Switcher Modal (PRD 7.1) -->

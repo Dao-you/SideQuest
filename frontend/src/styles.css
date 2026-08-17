@@ -98,16 +98,16 @@ button { cursor: pointer; }
 .sheet-minimize-button:hover { color: #3f6451; background: #edf3e9; }
 .sheet-handle { width: 38px; height: 4px; border-radius: 8px; background: #cbd2c9; transition: width .2s ease, background .2s ease; }
 .sheet-grabber:hover .sheet-handle { width: 48px; background: #9fb1a1; }
-.shade-scenario-panel { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin: 0 2px 15px; padding: 10px 11px 10px 13px; border: 1px solid #d9e3d6; border-radius: 17px; background: linear-gradient(135deg, #f2f7ee, #fffaf0); box-shadow: 0 6px 18px rgba(58, 82, 61, .06); }
+.shade-scenario-panel { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 28px 2px 0; padding: 8px 10px; border-top: 1px dashed #d8ddd5; color: #849087; opacity: .78; }
 .shade-scenario-copy { display: flex; min-width: 0; align-items: center; gap: 9px; }
 .shade-scenario-copy > div { display: grid; min-width: 0; gap: 2px; }
-.shade-scenario-copy strong { color: #3e5f4c; font-size: 11px; }
+.shade-scenario-copy strong { color: #65736a; font-size: 10px; font-weight: 600; }
 .shade-scenario-copy small { overflow: hidden; color: #7c897e; font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
-.shade-scenario-icon { display: grid; width: 30px; height: 30px; flex: 0 0 auto; border-radius: 10px; place-items: center; color: #bc813a; background: #fff1d6; font-size: 16px; }
-.shade-scenario-switch { display: grid; grid-template-columns: repeat(3, minmax(58px, 1fr)); flex: 0 0 auto; gap: 4px; padding: 3px; border-radius: 12px; background: rgba(89, 108, 91, .08); }
-.shade-scenario-switch button { display: grid; min-width: 58px; padding: 6px 9px; border: 0; border-radius: 9px; gap: 1px; color: #7a877d; background: transparent; font: inherit; text-align: center; transition: color .2s ease, background .2s ease, box-shadow .2s ease; }
+.shade-scenario-icon { display: grid; width: 22px; height: 22px; flex: 0 0 auto; place-items: center; color: #7c887f; font-size: 13px; }
+.shade-scenario-switch { display: grid; grid-template-columns: repeat(3, minmax(50px, 1fr)); flex: 0 0 auto; gap: 2px; padding: 2px; border-radius: 10px; background: rgba(89, 108, 91, .055); }
+.shade-scenario-switch button { display: grid; min-width: 50px; padding: 5px 7px; border: 0; border-radius: 8px; gap: 1px; color: #879088; background: transparent; font: inherit; text-align: center; transition: color .2s ease, background .2s ease, box-shadow .2s ease; }
 .shade-scenario-switch button:hover { color: #476350; background: rgba(255, 255, 255, .55); }
-.shade-scenario-switch button.active { color: #fff; background: #486957; box-shadow: 0 4px 10px rgba(50, 79, 61, .2); }
+.shade-scenario-switch button.active { color: #53695b; background: rgba(255, 255, 255, .9); box-shadow: 0 1px 4px rgba(50, 79, 61, .12); }
 .shade-scenario-switch strong { font-size: 9px; }
 .shade-scenario-switch small { font-size: 7px; opacity: .78; }
 .sheet-discover-view { min-width: 0; min-height: 100%; }
@@ -360,9 +360,9 @@ button { cursor: pointer; }
   .map-route-banner { top: 125px; left: 18px; right: 18px; }
   .bottom-sheet { padding: 0 17px 86px; border-radius: 26px 26px 0 0; }
   .sheet-grabber { width: calc(100% + 34px); margin-right: -17px; margin-left: -17px; }
-  .shade-scenario-panel { display: grid; gap: 8px; padding: 9px; }
+  .shade-scenario-panel { display: flex; gap: 8px; padding: 9px 2px; }
   .shade-scenario-copy small { white-space: normal; }
-  .shade-scenario-switch { width: 100%; }
+  .shade-scenario-switch { width: auto; }
   .shade-scenario-switch button { min-width: 0; }
   .sheet-header { margin-bottom: 15px; }
   .sheet-header h1 { font-size: 24px; }
