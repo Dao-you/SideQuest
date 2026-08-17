@@ -1,12 +1,16 @@
-"""Agent Interaction Routes (Chat, SSE Stream, Recommendations, Quick Prompts, and Feedback)."""
+"""Agent Interaction Routes using Service Interfaces (Chat, SSE Stream, Recommendations, Quick Prompts, and Feedback)."""
 
 import json
 from typing import AsyncGenerator
 from fastapi import APIRouter, Depends
 from sse_starlette.sse import EventSourceResponse
 
-from app.api.deps import get_agent_dep
 from app.agent.gemini_agent import GeminiAgent
+from app.api.deps import (
+    get_agent_dep,
+    get_feedback_service_dep,
+    get_prompt_metadata_dep,
+)
 from app.models.agent import (
     AgentRecommendation,
     AgentRecommendationRequest,
@@ -14,9 +18,11 @@ from app.models.agent import (
     ChatResponse,
     FeedbackRequest,
     FeedbackResponse,
-    QuickPromptItem,
     QuickPromptsResponse,
-    QuickTagItem,
+)
+from app.services.interfaces import (
+    FeedbackServiceInterface,
+    PromptMetadataServiceInterface,
 )
 
 router = APIRouter(prefix="/agent", tags=["Agent Discovery & Decision"])
@@ -26,51 +32,13 @@ router = APIRouter(prefix="/agent", tags=["Agent Discovery & Decision"])
     "/quick-prompts",
     response_model=QuickPromptsResponse,
     summary="取得首頁範例提示詞與快速篩選標籤 (PRD Section 7.2)",
-    description="提供 PRD 規範之首頁範例提示詞（如免費展覽、AI 小聚、中山區兩小時）與快速條件標籤（今天/週末、免費、室內、避開人潮）。",
+    description="透過 PromptMetadataServiceInterface 提供首頁範例提示詞與快速條件標籤，支援動態擴充與測試。",
 )
-async def get_quick_prompts():
-    """Returns example prompts and quick chips specified in PRD Section 7.2."""
-    example_prompts = [
-        QuickPromptItem(
-            title="免費文藝探索",
-            prompt="這週六下午，台北有什麼免費展覽或市集？",
-            category="exhibition",
-            icon="🎨",
-        ),
-        QuickPromptItem(
-            title="AI 與技術小聚",
-            prompt="最近台北有沒有 AI、產品或創業社群小聚？",
-            category="tech",
-            icon="🤖",
-        ),
-        QuickPromptItem(
-            title="臨時放鬆避開人潮",
-            prompt="我在中山區，有兩個小時空檔，想找有冷氣又不想去太擠的地方。",
-            category="crowd_avoid",
-            icon="☕",
-        ),
-        QuickPromptItem(
-            title="捷運遮蔭散策",
-            prompt="找捷運直達、300 元以內的室內展覽，避開烈日曝曬。",
-            category="transit_shade",
-            icon="🚇",
-        ),
-    ]
-
-    quick_tags = [
-        QuickTagItem(id="tag_weekend", label="本週末", icon="📅", filter_key="time", filter_value="weekend"),
-        QuickTagItem(id="tag_free", label="免費活動", icon="🎟️", filter_key="price_type", filter_value="free"),
-        QuickTagItem(id="tag_indoor", label="室內冷氣", icon="❄️", filter_key="is_indoor", filter_value=True),
-        QuickTagItem(id="tag_avoid_crowd", label="避開人潮", icon="✨", filter_key="avoid_crowd", filter_value=True),
-        QuickTagItem(id="tag_tech", label="技術與小聚", icon="💻", filter_key="category", filter_value="tech"),
-        QuickTagItem(id="tag_family", label="親子體驗", icon="👨‍👩‍👧", filter_key="category", filter_value="family"),
-        QuickTagItem(id="tag_nearby", label="捷運附近", icon="📍", filter_key="nearby", filter_value=True),
-    ]
-
-    return QuickPromptsResponse(
-        example_prompts=example_prompts,
-        quick_tags=quick_tags,
-    )
+async def get_quick_prompts(
+    prompt_service: PromptMetadataServiceInterface = Depends(get_prompt_metadata_dep),
+) -> QuickPromptsResponse:
+    """Retrieve example prompts and quick filter tags from service."""
+    return prompt_service.get_quick_prompts()
 
 
 @router.post(
@@ -137,11 +105,11 @@ async def recommend(
     "/feedback",
     response_model=FeedbackResponse,
     summary="使用者推薦結果滿意度回饋 (PRD Section 6 Stage 10)",
-    description="蒐集使用者對於推薦結果之符合度、距離、人潮等回饋，用於後續推薦調優。",
+    description="透過 FeedbackServiceInterface 記錄使用者對於推薦結果之符合度、距離、人潮等回饋，自動持久化至 Firestore 或記憶體中。",
 )
-async def submit_feedback(req: FeedbackRequest):
+async def submit_feedback(
+    req: FeedbackRequest,
+    feedback_service: FeedbackServiceInterface = Depends(get_feedback_service_dep),
+) -> FeedbackResponse:
     """Log user feedback for recommendation quality."""
-    return FeedbackResponse(
-        status="success",
-        message=f"已成功記錄對活動 '{req.event_id}' 的回饋（{'符合需求' if req.is_helpful else '不符合需求'}）。SideQuest 感謝您的寶貴建議！",
-    )
+    return await feedback_service.submit_feedback(req)

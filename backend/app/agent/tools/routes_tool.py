@@ -1,8 +1,8 @@
-"""Google Routes and Thermal Comfort Route Tool."""
+"""Google Routes and Thermal Comfort Route Tool using PlacesServiceInterface."""
 
 from typing import Any, Dict
 from app.agent.tools.base import BaseTool
-from app.services.maps_service import get_maps_service
+from app.services.places_service import get_places_service
 
 
 class RoutesTool(BaseTool):
@@ -57,7 +57,7 @@ class RoutesTool(BaseTool):
         **kwargs: Any,
     ) -> Dict[str, Any]:
         """Execute route calculation."""
-        service = get_maps_service()
+        service = get_places_service()
         route = await service.compute_route(
             origin_lat=origin_lat,
             origin_lng=origin_lng,

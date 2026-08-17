@@ -24,21 +24,39 @@ from app.models.agent import (
     SSEEventType,
 )
 from app.models.event import RecommendationCard
-from app.services.firestore_service import get_firestore_service
-from app.services.maps_service import get_maps_service
+from app.services.crowd_service import get_crowd_service
+from app.services.event_service import get_event_service
+from app.services.interfaces import (
+    CrowdServiceInterface,
+    EventServiceInterface,
+    PlacesServiceInterface,
+    UserServiceInterface,
+    WeatherServiceInterface,
+)
+from app.services.places_service import get_places_service
 from app.services.user_service import get_user_service
+from app.services.weather_service import get_weather_service
 
 
 class GeminiAgent:
-    """Agent orchestrator managing multi-step reasoning, tool invocations, and SSE streams."""
+    """Agent orchestrator managing multi-step reasoning, tool invocations, and SSE streams using Service Interfaces."""
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        event_service: Optional[EventServiceInterface] = None,
+        crowd_service: Optional[CrowdServiceInterface] = None,
+        weather_service: Optional[WeatherServiceInterface] = None,
+        places_service: Optional[PlacesServiceInterface] = None,
+        user_service: Optional[UserServiceInterface] = None,
+    ) -> None:
         self.api_key = settings.GEMINI_API_KEY
         self.model_name = settings.GEMINI_MODEL
         self.tool_registry = get_tool_registry()
-        self.firestore_service = get_firestore_service()
-        self.maps_service = get_maps_service()
-        self.user_service = get_user_service()
+        self.event_service = event_service or get_event_service()
+        self.crowd_service = crowd_service or get_crowd_service()
+        self.weather_service = weather_service or get_weather_service()
+        self.places_service = places_service or get_places_service()
+        self.user_service = user_service or get_user_service()
         # In-memory session store for multi-turn contextual refinement (PRD 7.6)
         self._session_cache: Dict[str, Dict[str, Any]] = {}
 
@@ -296,15 +314,15 @@ class GeminiAgent:
         )
         await asyncio.sleep(0.1)
 
-        all_events = await self.firestore_service.get_events()
-        all_venues = await self.firestore_service.get_all_venues()
+        all_events = await self.event_service.get_events()
+        all_venues = await self.crowd_service.get_all_venues()
         venues_map = {v.venue_id: v for v in all_venues}
-        microclimate = await self.maps_service.get_microclimate(user_lat, user_lng)
+        microclimate = await self.weather_service.get_microclimate(user_lat, user_lng)
 
         # Compute routes
         routes_map = {}
         for ev in all_events:
-            route = await self.maps_service.compute_route(
+            route = await self.places_service.compute_route(
                 origin_lat=user_lat,
                 origin_lng=user_lng,
                 dest_lat=ev.location.latitude,
@@ -435,14 +453,14 @@ class GeminiAgent:
 
     async def recommend(self, request: AgentRecommendationRequest) -> AgentRecommendation:
         """Quick structured recommendation method."""
-        all_events = await self.firestore_service.get_events()
-        all_venues = await self.firestore_service.get_all_venues()
+        all_events = await self.event_service.get_events()
+        all_venues = await self.crowd_service.get_all_venues()
         venues_map = {v.venue_id: v for v in all_venues}
-        microclimate = await self.maps_service.get_microclimate(request.user_latitude, request.user_longitude)
+        microclimate = await self.weather_service.get_microclimate(request.user_latitude, request.user_longitude)
 
         routes_map = {}
         for ev in all_events:
-            route = await self.maps_service.compute_route(
+            route = await self.places_service.compute_route(
                 origin_lat=request.user_latitude,
                 origin_lng=request.user_longitude,
                 dest_lat=ev.location.latitude,

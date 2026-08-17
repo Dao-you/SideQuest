@@ -1,10 +1,10 @@
-"""Weather, Microclimate, and Solar API Routes."""
+"""Weather, Microclimate, and Solar API Routes using WeatherServiceInterface."""
 
 from fastapi import APIRouter, Depends, Query
 
-from app.api.deps import get_maps_dep
+from app.api.deps import get_weather_service_dep
 from app.models.weather import MicroclimateResponse, SolarExposureResponse
-from app.services.maps_service import MapsService
+from app.services.interfaces import WeatherServiceInterface
 
 router = APIRouter(prefix="/weather", tags=["Microclimate & Solar"])
 
@@ -18,11 +18,10 @@ router = APIRouter(prefix="/weather", tags=["Microclimate & Solar"])
 async def get_current_weather(
     lat: float = Query(25.0330, description="緯度"),
     lng: float = Query(121.5654, description="經度"),
-    district: str = Query("Taipei", description="行政區名稱"),
-    maps_service: MapsService = Depends(get_maps_dep),
+    weather_service: WeatherServiceInterface = Depends(get_weather_service_dep),
 ) -> MicroclimateResponse:
     """Retrieve microclimate readings for coordinates."""
-    return await maps_service.get_microclimate(lat, lng, district)
+    return await weather_service.get_microclimate(lat, lng)
 
 
 @router.get(
@@ -34,7 +33,7 @@ async def get_current_weather(
 async def get_solar(
     lat: float = Query(25.0330, description="緯度"),
     lng: float = Query(121.5654, description="經度"),
-    maps_service: MapsService = Depends(get_maps_dep),
+    weather_service: WeatherServiceInterface = Depends(get_weather_service_dep),
 ) -> SolarExposureResponse:
     """Retrieve solar exposure analysis for coordinates."""
-    return await maps_service.get_solar_exposure(lat, lng)
+    return await weather_service.get_solar_exposure(lat, lng)

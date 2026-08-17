@@ -1,11 +1,11 @@
-"""Crowd Density and Heatmap Layer Routes."""
+"""Crowd Density and Heatmap Layer Routes using CrowdServiceInterface."""
 
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException
 
-from app.api.deps import get_firestore_dep
+from app.api.deps import get_crowd_service_dep
 from app.models.crowd import HeatmapPoint, VenueLiveStatus
-from app.services.firestore_service import FirestoreService
+from app.services.interfaces import CrowdServiceInterface
 
 router = APIRouter(prefix="/crowd", tags=["Crowd Density & Heatmap"])
 
@@ -17,10 +17,10 @@ router = APIRouter(prefix="/crowd", tags=["Crowd Density & Heatmap"])
     description="提供前端 Google Maps JavaScript API HeatmapLayer 繪製即時人潮熱力圖所需之權重點位資料。",
 )
 async def get_heatmap(
-    db: FirestoreService = Depends(get_firestore_dep),
+    crowd_service: CrowdServiceInterface = Depends(get_crowd_service_dep),
 ) -> List[HeatmapPoint]:
     """Retrieve normalized heatmap points for map rendering."""
-    return await db.get_heatmap_points()
+    return await crowd_service.get_heatmap_points()
 
 
 @router.get(
@@ -29,10 +29,10 @@ async def get_heatmap(
     summary="取得所有場館即時擁擠狀態清單",
 )
 async def list_venues(
-    db: FirestoreService = Depends(get_firestore_dep),
+    crowd_service: CrowdServiceInterface = Depends(get_crowd_service_dep),
 ) -> List[VenueLiveStatus]:
     """Retrieve all venues live status."""
-    return await db.get_all_venues()
+    return await crowd_service.get_all_venues()
 
 
 @router.get(
@@ -42,10 +42,10 @@ async def list_venues(
 )
 async def get_venue(
     venue_id: str,
-    db: FirestoreService = Depends(get_firestore_dep),
+    crowd_service: CrowdServiceInterface = Depends(get_crowd_service_dep),
 ) -> VenueLiveStatus:
     """Retrieve venue live status by ID."""
-    venue = await db.get_venue_by_id(venue_id)
+    venue = await crowd_service.get_venue_by_id(venue_id)
     if not venue:
-        raise HTTPException(status_code=404, detail=f"Venue '{venue_id}' not found.")
+        raise HTTPException(status_code=404, detail=f"找不到場館 ID '{venue_id}'。")
     return venue

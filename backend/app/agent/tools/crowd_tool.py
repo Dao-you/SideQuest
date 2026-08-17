@@ -1,8 +1,8 @@
-"""Crowd Density Sensing Tool."""
+"""Crowd Density Sensing Tool using CrowdServiceInterface."""
 
 from typing import Any, Dict, Optional
 from app.agent.tools.base import BaseTool
-from app.services.firestore_service import get_firestore_service
+from app.services.crowd_service import get_crowd_service
 
 
 class CrowdTool(BaseTool):
@@ -34,7 +34,7 @@ class CrowdTool(BaseTool):
         **kwargs: Any,
     ) -> Dict[str, Any]:
         """Execute crowd density inspection."""
-        service = get_firestore_service()
+        service = get_crowd_service()
         venues = await service.get_all_venues()
 
         matched_venue = None

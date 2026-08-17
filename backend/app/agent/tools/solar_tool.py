@@ -1,8 +1,8 @@
-"""Google Solar Exposure and Shading Tool."""
+"""Google Solar Exposure and Shading Tool using WeatherServiceInterface."""
 
 from typing import Any, Dict
 from app.agent.tools.base import BaseTool
-from app.services.maps_service import get_maps_service
+from app.services.weather_service import get_weather_service
 
 
 class SolarTool(BaseTool):
@@ -34,8 +34,8 @@ class SolarTool(BaseTool):
         **kwargs: Any,
     ) -> Dict[str, Any]:
         """Execute solar exposure evaluation."""
-        service = get_maps_service()
-        solar = await service.get_solar_exposure(latitude, longitude)
+        weather_service = get_weather_service()
+        solar = await weather_service.get_solar_exposure(latitude, longitude)
         return {
             "status": "success",
             "solar_radiation_w_m2": solar.solar_radiation_w_m2,

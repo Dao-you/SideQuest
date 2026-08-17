@@ -1,13 +1,17 @@
-"""Mock User and Persona Management Service for PRD MVP."""
+"""Mock User and Persona Management Service implementing UserServiceInterface."""
 
 from typing import Dict, List, Optional
-from app.models.user import UserProfile, FavoriteToggleResponse
+from app.models.event import Event
+from app.models.user import FavoriteToggleResponse, UpdatePreferencesRequest, UserProfile
+from app.services.event_service import EventService, get_event_service
+from app.services.interfaces import EventServiceInterface, UserServiceInterface
 
 
-class UserService:
-    """Manages mock user profiles, preset persona accounts, and favorites."""
+class UserService(UserServiceInterface):
+    """Manages user profiles, preset persona accounts, and favorites with interface support."""
 
-    def __init__(self) -> None:
+    def __init__(self, event_service: Optional[EventServiceInterface] = None) -> None:
+        self.event_service = event_service or get_event_service()
         self._users: Dict[str, UserProfile] = {}
         self._init_preset_personas()
 
@@ -70,11 +74,15 @@ class UserService:
         for p in personas:
             self._users[p.user_id] = p
 
-    def get_user_profile(self, user_id: str) -> UserProfile:
+    def list_personas(self) -> List[UserProfile]:
+        """Return the 4 preset personas."""
+        preset_ids = ["demo_weekend_explorer", "demo_tech_geek", "demo_crowd_avoider", "demo_family_parent"]
+        return [self.get_profile(uid) for uid in preset_ids]
+
+    def get_profile(self, user_id: str) -> UserProfile:
         """Fetch user profile or return default guest profile."""
         if user_id in self._users:
             return self._users[user_id]
-        # Return fallback guest user
         return UserProfile(
             user_id=user_id,
             name="訪客探索者",
@@ -89,13 +97,16 @@ class UserService:
             max_budget=500,
         )
 
+    def get_user_profile(self, user_id: str) -> UserProfile:
+        """Alias for get_profile."""
+        return self.get_profile(user_id)
+
     def mock_login(self, account_id: Optional[str] = None, custom_name: Optional[str] = None) -> UserProfile:
         """Log in as a preset demo account or create a quick guest persona."""
         acc_id = account_id or "demo_weekend_explorer"
         if acc_id in self._users:
             return self._users[acc_id]
-        
-        # Create new custom mock account
+
         new_user = UserProfile(
             user_id=acc_id,
             name=custom_name or f"探索者 {acc_id[:6]}",
@@ -112,9 +123,13 @@ class UserService:
         self._users[acc_id] = new_user
         return new_user
 
-    def toggle_favorite(self, user_id: str, event_id: str) -> FavoriteToggleResponse:
-        """Add or remove an event ID from user favorites."""
-        user = self.get_user_profile(user_id)
+    async def toggle_favorite(self, user_id: str, event_id: str) -> FavoriteToggleResponse:
+        """Add or remove an event ID from user favorites after verifying event existence."""
+        event = await self.event_service.get_event_by_id(event_id)
+        if not event:
+            raise ValueError(f"活動 ID '{event_id}' 不存在")
+
+        user = self.get_profile(user_id)
         if event_id in user.favorite_event_ids:
             user.favorite_event_ids.remove(event_id)
             is_fav = False
@@ -132,27 +147,29 @@ class UserService:
             message=msg,
         )
 
-    def update_preferences(
-        self,
-        user_id: str,
-        favorite_categories: Optional[List[str]] = None,
-        favorite_tags: Optional[List[str]] = None,
-        prefer_indoor: Optional[bool] = None,
-        avoid_crowd: Optional[bool] = None,
-        max_budget: Optional[int] = None,
-    ) -> UserProfile:
+    async def get_favorites(self, user_id: str) -> List[Event]:
+        """Resolve favorited Event objects via event_service."""
+        user = self.get_profile(user_id)
+        events: List[Event] = []
+        for eid in user.favorite_event_ids:
+            ev = await self.event_service.get_event_by_id(eid)
+            if ev:
+                events.append(ev)
+        return events
+
+    def update_preferences(self, user_id: str, req: UpdatePreferencesRequest) -> UserProfile:
         """Update user preferences."""
-        user = self.get_user_profile(user_id)
-        if favorite_categories is not None:
-            user.favorite_categories = favorite_categories
-        if favorite_tags is not None:
-            user.favorite_tags = favorite_tags
-        if prefer_indoor is not None:
-            user.prefer_indoor = prefer_indoor
-        if avoid_crowd is not None:
-            user.avoid_crowd = avoid_crowd
-        if max_budget is not None:
-            user.max_budget = max_budget
+        user = self.get_profile(user_id)
+        if req.favorite_categories is not None:
+            user.favorite_categories = req.favorite_categories
+        if req.favorite_tags is not None:
+            user.favorite_tags = req.favorite_tags
+        if req.prefer_indoor is not None:
+            user.prefer_indoor = req.prefer_indoor
+        if req.avoid_crowd is not None:
+            user.avoid_crowd = req.avoid_crowd
+        if req.max_budget is not None:
+            user.max_budget = req.max_budget
 
         self._users[user.user_id] = user
         return user

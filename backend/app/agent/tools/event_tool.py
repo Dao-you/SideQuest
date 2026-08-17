@@ -1,13 +1,13 @@
-"""Event Search Tool."""
+"""Event Search Tool using EventServiceInterface."""
 
 from typing import Any, Dict, Optional
 from app.agent.tools.base import BaseTool
 from app.models.event import EventFilter
-from app.services.firestore_service import get_firestore_service
+from app.services.event_service import get_event_service
 
 
 class EventTool(BaseTool):
-    """Tool to search events from Firestore by category, keywords, AC, and district."""
+    """Tool to search events from EventService by category, keywords, AC, and district."""
 
     name = "search_events"
     description = (
@@ -56,7 +56,7 @@ class EventTool(BaseTool):
         **kwargs: Any,
     ) -> Dict[str, Any]:
         """Execute event search query."""
-        service = get_firestore_service()
+        service = get_event_service()
         filter_params = EventFilter(
             category=category,
             keyword=keyword,

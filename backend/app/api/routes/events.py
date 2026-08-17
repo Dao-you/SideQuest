@@ -1,11 +1,11 @@
-"""Events Management and Discovery Routes."""
+"""Events Management and Discovery Routes using EventServiceInterface."""
 
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from app.api.deps import get_firestore_dep
-from app.models.event import Event, EventCategory, EventFilter
-from app.services.firestore_service import FirestoreService
+from app.api.deps import get_event_service_dep
+from app.models.event import Event, EventFilter
+from app.services.interfaces import EventServiceInterface
 
 router = APIRouter(prefix="/events", tags=["Events"])
 
@@ -24,7 +24,7 @@ async def list_events(
     keyword: Optional[str] = Query(None, description="關鍵字搜尋"),
     limit: int = Query(20, ge=1, le=100, description="單次查詢最大筆數"),
     offset: int = Query(0, ge=0, description="分頁位移量"),
-    db: FirestoreService = Depends(get_firestore_dep),
+    event_service: EventServiceInterface = Depends(get_event_service_dep),
 ) -> List[Event]:
     """Retrieve filtered list of events."""
     filter_params = EventFilter(
@@ -36,7 +36,7 @@ async def list_events(
         limit=limit,
         offset=offset,
     )
-    return await db.get_events(filter_params)
+    return await event_service.get_events(filter_params)
 
 
 @router.get(
@@ -44,9 +44,11 @@ async def list_events(
     response_model=List[str],
     summary="取得所有活動分類清單",
 )
-async def list_categories() -> List[str]:
+async def list_categories(
+    event_service: EventServiceInterface = Depends(get_event_service_dep),
+) -> List[str]:
     """Return all supported event categories."""
-    return [c.value for c in EventCategory]
+    return await event_service.get_categories()
 
 
 @router.get(
@@ -56,10 +58,10 @@ async def list_categories() -> List[str]:
 )
 async def get_event(
     event_id: str,
-    db: FirestoreService = Depends(get_firestore_dep),
+    event_service: EventServiceInterface = Depends(get_event_service_dep),
 ) -> Event:
     """Retrieve event by unique ID."""
-    event = await db.get_event_by_id(event_id)
+    event = await event_service.get_event_by_id(event_id)
     if not event:
-        raise HTTPException(status_code=404, detail=f"Event with ID '{event_id}' not found.")
+        raise HTTPException(status_code=404, detail=f"活動 ID '{event_id}' 不存在。")
     return event

@@ -1,8 +1,8 @@
-"""Weather and Microclimate Tool."""
+"""Weather and Microclimate Tool using WeatherServiceInterface."""
 
 from typing import Any, Dict
 from app.agent.tools.base import BaseTool
-from app.services.maps_service import get_maps_service
+from app.services.weather_service import get_weather_service
 
 
 class WeatherTool(BaseTool):
@@ -41,8 +41,8 @@ class WeatherTool(BaseTool):
         **kwargs: Any,
     ) -> Dict[str, Any]:
         """Execute microclimate check."""
-        maps_service = get_maps_service()
-        micro = await maps_service.get_microclimate(latitude, longitude, district)
+        weather_service = get_weather_service()
+        micro = await weather_service.get_microclimate(latitude, longitude)
         return {
             "status": "success",
             "temperature_c": micro.temperature_c,
