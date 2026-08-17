@@ -18,8 +18,7 @@ class Settings(BaseSettings):
 
     # Google Gemini AI Config
     GEMINI_API_KEY: str = Field(default="", description="Google AI Studio Gemini API Key")
-    GEMINI_MODEL: str = Field(default="gemini-2.5-flash", description="Gemini Model Identifier")
-    GOOGLE_CLOUD_LOCATION: str = Field(default="global", description="Vertex AI location")
+    GEMINI_MODEL: str = Field(default="gemini-3.7-flash", description="Gemini Model Identifier (e.g. gemini-3.7-flash, gemini-2.5-flash, gemini-3.1-pro)")
 
     # Google Maps Platform Config
     GOOGLE_MAPS_API_KEY: str = Field(default="", description="Google Maps Platform API Key")

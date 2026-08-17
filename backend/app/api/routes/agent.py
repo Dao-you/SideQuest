@@ -2,7 +2,7 @@
 
 import json
 from typing import AsyncGenerator
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from sse_starlette.sse import EventSourceResponse
 
 from app.agent.gemini_agent import GeminiAgent
@@ -24,35 +24,8 @@ from app.services.interfaces import (
     FeedbackServiceInterface,
     PromptMetadataServiceInterface,
 )
-from app.models.ai import AiRecommendRequest, AiRecommendResponse
-from app.services.vertex_ai_service import VertexAiService, get_vertex_ai_service
 
 router = APIRouter(prefix="/agent", tags=["Agent Discovery & Decision"])
-
-
-@router.post(
-    "/ai-recommend",
-    response_model=AiRecommendResponse,
-    summary="使用 Vertex AI Gemini 分析前端活動資料",
-    description="以穩定的前端資料來源介面傳入活動清單，讓 Gemini 依使用者自然語言需求產生繁體中文摘要。",
-)
-async def ai_recommend(
-    request: AiRecommendRequest,
-    ai_service: VertexAiService = Depends(get_vertex_ai_service),
-) -> AiRecommendResponse:
-    """Generate an answer from the event catalog without exposing model credentials to Vue."""
-    try:
-        reply = await ai_service.recommend(request.message, request.events)
-    except RuntimeError as error:
-        raise HTTPException(status_code=503, detail=str(error)) from error
-    except Exception as error:
-        raise HTTPException(status_code=502, detail="Vertex AI request failed") from error
-    return AiRecommendResponse(
-        reply=reply,
-        provider=ai_service.provider,
-        model=ai_service.model,
-        used_event_count=len(request.events),
-    )
 
 
 @router.get(
