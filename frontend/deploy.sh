@@ -42,7 +42,7 @@ fi
 echo "🏗️ Building Frontend Docker container via Cloud Build with GCP project configuration..."
 gcloud builds submit . \
   --config=cloudbuild.yaml \
-  --substitutions="_REGION=${REGION},_REPOSITORY=${REPO_NAME},_MAPS_API_KEY=${MAPS_API_KEY},_API_BASE_URL=/api/v1,_EVENT_SOURCE=api,_AGENT_SOURCE=agent" \
+  --substitutions="_REGION=${REGION},_REPOSITORY=${REPO_NAME},_IMAGE_NAME=${IMAGE_NAME},_MAPS_API_KEY=${MAPS_API_KEY},_API_BASE_URL=/api/v1,_EVENT_SOURCE=api,_AGENT_SOURCE=agent" \
   --project="${PROJECT_ID}"
 
 # Step 3: Deploy to Cloud Run
