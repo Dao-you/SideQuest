@@ -10,9 +10,11 @@ dependencies = [
     "pydantic-settings>=2.7.0",
     "google-genai>=1.0.0",
     "google-cloud-firestore>=2.19.0",
+    "google-auth>=2.38.0",
     "httpx>=0.28.0",
     "sse-starlette>=2.2.1",
     "python-dotenv>=1.0.1",
+    "tzdata>=2025.2; sys_platform == 'win32'",
 ]
 
 [dependency-groups]

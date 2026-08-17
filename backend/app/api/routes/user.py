@@ -51,14 +51,19 @@ async def get_google_auth_config(
     "/auth/google",
     response_model=GoogleAuthResponse,
     summary="真實 Google 帳號登入 (Google Sign-In / OAuth 2.0)",
-    description="支援透過 Google Identity Services (GIS) JWT Token 或 OAuth 2.0 驗證真實 Google 帳號，並同步使用者真實 Google 個人資料與日曆連動。",
+    description="接收 Google Identity Services (GIS) 簽發的 ID token，於後端驗證簽章、audience、issuer、有效期限與 email_verified 後建立使用者資料。此端點不接受前端自行提供的 email 或未驗證 JWT payload。",
 )
 async def login_with_google(
     req: GoogleAuthRequest,
     user_service: UserServiceInterface = Depends(get_user_service_dep),
 ) -> GoogleAuthResponse:
     """Sign in or register user using real Google account credentials."""
-    return user_service.login_google(req)
+    try:
+        return user_service.login_google(req)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=401, detail=str(exc)) from exc
 
 
 @router.post(

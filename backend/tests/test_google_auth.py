@@ -1,62 +1,70 @@
-"""Unit tests for Real Google Account Authentication and Google Identity flow."""
+"""Tests for strict Google Identity Services token verification."""
+
+from unittest.mock import patch
 
 import pytest
+
+from app.config import settings
 from app.models.user import GoogleAuthRequest
 from app.services.user_service import UserService
 
 
 @pytest.fixture
 def user_service():
-    """Returns a fresh UserService instance."""
     return UserService()
 
 
-def test_get_google_auth_config(user_service):
-    """Verify Google OAuth configuration endpoint."""
+def test_get_google_auth_config_disabled_without_client_id(user_service, monkeypatch):
+    monkeypatch.setattr(settings, "GOOGLE_CLIENT_ID", "")
+
     config = user_service.get_google_auth_config()
-    assert config.enabled is True
-    assert config.client_id != ""
+
+    assert config.enabled is False
+    assert config.client_id == ""
 
 
-def test_login_with_google_direct_profile(user_service):
-    """Verify authentication with direct Google Profile."""
-    req = GoogleAuthRequest(
-        email="bradly093@gmail.com",
-        name="Bradly Google",
-        picture="https://lh3.googleusercontent.com/a/test-avatar",
-        sub="109283746501928374650",
-    )
-    res = user_service.login_google(req)
-    assert res.success is True
-    assert res.user.email == "bradly093@gmail.com"
-    assert res.user.name == "Bradly Google"
-    assert res.user.google_account_connected is True
-    assert res.user.auth_provider == "google"
-    assert res.user.is_mock_account is False
-    assert len(res.user.calendar_events) > 0
-
-
-def test_login_with_google_id_token_jwt_payload(user_service):
-    """Verify authentication by decoding base64 JWT payload."""
-    import base64
-    import json
-
-    header = base64.urlsafe_b64encode(json.dumps({"alg": "RS256"}).encode()).decode().rstrip("=")
-    payload_data = {
-        "email": "kevin.devjam@gmail.com",
-        "name": "Kevin DevJam",
-        "picture": "https://lh3.googleusercontent.com/a/kevin-avatar",
-        "sub": "998877665544332211",
-        "aud": "917216410511.apps.googleusercontent.com",
+def test_login_with_verified_google_id_token(user_service, monkeypatch):
+    monkeypatch.setattr(settings, "GOOGLE_CLIENT_ID", "web-client.apps.googleusercontent.com")
+    verified_claims = {
+        "sub": "109283746501928374650",
+        "email": "kevin@example.com",
+        "email_verified": True,
+        "name": "Kevin",
+        "picture": "https://lh3.googleusercontent.com/a/test-avatar",
+        "aud": settings.GOOGLE_CLIENT_ID,
+        "iss": "https://accounts.google.com",
     }
-    payload = base64.urlsafe_b64encode(json.dumps(payload_data).encode()).decode().rstrip("=")
-    simulated_jwt = f"{header}.{payload}.signature"
 
-    req = GoogleAuthRequest(id_token=simulated_jwt)
-    res = user_service.login_google(req)
-    assert res.success is True
-    assert res.user.email == "kevin.devjam@gmail.com"
-    assert res.user.name == "Kevin DevJam"
-    assert res.user.avatar_url == "https://lh3.googleusercontent.com/a/kevin-avatar"
-    assert res.user.google_account_connected is True
-    assert res.user.auth_provider == "google"
+    with patch("google.oauth2.id_token.verify_oauth2_token", return_value=verified_claims) as verify:
+        response = user_service.login_google(GoogleAuthRequest(credential="signed-google-token"))
+
+    verify.assert_called_once()
+    assert verify.call_args.kwargs["audience"] == settings.GOOGLE_CLIENT_ID
+    assert response.success is True
+    assert response.user.user_id == "google_1092837465019283"
+    assert response.user.email == "kevin@example.com"
+    assert response.user.avatar_url == verified_claims["picture"]
+    assert response.user.auth_provider == "google"
+    assert response.user.is_mock_account is False
+    assert response.user.calendar_events == []
+
+
+def test_login_rejects_unsigned_or_invalid_token(user_service, monkeypatch):
+    monkeypatch.setattr(settings, "GOOGLE_CLIENT_ID", "web-client.apps.googleusercontent.com")
+
+    with patch("google.oauth2.id_token.verify_oauth2_token", side_effect=ValueError("bad signature")):
+        with pytest.raises(ValueError, match="無效或已過期"):
+            user_service.login_google(GoogleAuthRequest(credential="unsigned.jwt.payload"))
+
+
+def test_login_rejects_unverified_email(user_service, monkeypatch):
+    monkeypatch.setattr(settings, "GOOGLE_CLIENT_ID", "web-client.apps.googleusercontent.com")
+    claims = {
+        "sub": "123",
+        "email": "unverified@example.com",
+        "email_verified": False,
+    }
+
+    with patch("google.oauth2.id_token.verify_oauth2_token", return_value=claims):
+        with pytest.raises(ValueError, match="已驗證的身分資料"):
+            user_service.login_google(GoogleAuthRequest(credential="signed-google-token"))

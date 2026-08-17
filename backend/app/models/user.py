@@ -39,13 +39,8 @@ class UserProfile(BaseModel):
 
 
 class GoogleAuthRequest(BaseModel):
-    """Request to authenticate with Google Account."""
-    id_token: Optional[str] = Field(default=None, description="Google Identity Services signed JWT ID token")
-    access_token: Optional[str] = Field(default=None, description="Google OAuth 2.0 Access Token")
-    email: Optional[str] = Field(default=None, description="Verified Google email address")
-    name: Optional[str] = Field(default=None, description="Google Account user display name")
-    picture: Optional[str] = Field(default=None, description="Google profile picture avatar URL")
-    sub: Optional[str] = Field(default=None, description="Google unique subject ID")
+    """Credential returned by the official Google Identity Services button."""
+    credential: str = Field(..., min_length=1, description="Google Identity Services signed JWT ID token")
 
 
 class GoogleAuthResponse(BaseModel):
