@@ -4,6 +4,8 @@ steps:
       - build
       - --tag
       - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/frontend:$BUILD_ID
+      - --tag
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/frontend:latest
       - --build-arg
       - VITE_GOOGLE_MAPS_API_KEY=${_MAPS_API_KEY}
       - --build-arg
@@ -15,6 +17,7 @@ steps:
       - .
 images:
   - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/frontend:$BUILD_ID
+  - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/frontend:latest
 substitutions:
   _REGION: asia-east1
   _REPOSITORY: sidequest
