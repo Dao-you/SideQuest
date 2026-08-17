@@ -415,26 +415,68 @@ function fitRouteInVisibleMap(bounds) {
   })
 }
 
-function routeStepInstruction(step) {
-  if (step.instructions?.trim()) return step.instructions
-
-  const transit = step.transitDetails
+function formatZhTwStepInstruction(step, actualMode) {
+  // If transit details are present from DirectionsService step
+  const transit = step.transit || step.transitDetails
   if (transit) {
-    const line = transit.transitLine?.shortName
-      || transit.transitLine?.name
-      || transit.transitLine?.vehicle?.name
-      || '大眾運輸'
-    const departure = transit.departureStop?.name
-    const arrival = transit.arrivalStop?.name
-    const direction = transit.headsign ? `（往 ${transit.headsign}）` : ''
-    const stops = transit.stopCount ? `，共 ${transit.stopCount} 站` : ''
-    if (departure && arrival) return `從 ${departure} 搭乘 ${line}${direction} 至 ${arrival}${stops}`
-    return `搭乘 ${line}${direction}${stops}`
+    const line = transit.line?.short_name || transit.line?.name || transit.transitLine?.shortName || transit.transitLine?.name || '大眾運輸'
+    const departure = transit.departure_stop?.name || transit.departureStop?.name || ''
+    const arrival = transit.arrival_stop?.name || transit.arrivalStop?.name || ''
+    const headsign = (transit.headsign || transit.transitLine?.headsign) ? `（往 ${transit.headsign || transit.transitLine?.headsign}）` : ''
+    const numStops = (transit.num_stops || transit.stopCount) ? `，共 ${transit.num_stops || transit.stopCount} 站` : ''
+    if (departure && arrival) {
+      return `從 ${departure} 搭乘 ${line}${headsign} 至 ${arrival}${numStops}`
+    }
+    return `搭乘 ${line}${headsign}${numStops}`
   }
 
-  return String(step.travelMode).includes('WALK')
-    ? '依 Google Maps 步行路徑前進'
-    : '依 Google Maps 路線前進'
+  let text = step.instructions ? step.instructions.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim() : ''
+
+  if (!text) {
+    const travelModeStr = String(step.travel_mode || step.travelMode || '')
+    if (travelModeStr.includes('WALK') || actualMode === window.google?.maps?.TravelMode?.WALKING) {
+      return '沿騎樓／人行道步行前進'
+    }
+    if (travelModeStr.includes('BICYCLE') || actualMode === window.google?.maps?.TravelMode?.BICYCLING) {
+      return '沿自行車專用道／市區林蔭道路騎乘 YouBike 前進'
+    }
+    return '依 Google Maps 路線前進'
+  }
+
+  // Comprehensive Google Directions English -> zh-TW dictionary replacement
+  const translations = [
+    { re: /\bHead\s+north\s+on\b/gi, zh: '往北沿著' },
+    { re: /\bHead\s+south\s+on\b/gi, zh: '往南沿著' },
+    { re: /\bHead\s+east\s+on\b/gi, zh: '往東沿著' },
+    { re: /\bHead\s+west\s+on\b/gi, zh: '往西沿著' },
+    { re: /\bHead\s+northeast\s+on\b/gi, zh: '往東北沿著' },
+    { re: /\bHead\s+northwest\s+on\b/gi, zh: '往西北沿著' },
+    { re: /\bHead\s+southeast\s+on\b/gi, zh: '往東南沿著' },
+    { re: /\bHead\s+southwest\s+on\b/gi, zh: '往西南沿著' },
+    { re: /\bTurn\s+right\s+onto\b/gi, zh: '右轉進入' },
+    { re: /\bTurn\s+left\s+onto\b/gi, zh: '左轉進入' },
+    { re: /\bTurn\s+right\b/gi, zh: '右轉' },
+    { re: /\bTurn\s+left\b/gi, zh: '左轉' },
+    { re: /\bSlight\s+right\s+onto\b/gi, zh: '向右微轉進入' },
+    { re: /\bSlight\s+left\s+onto\b/gi, zh: '向左微轉進入' },
+    { re: /\bSlight\s+right\b/gi, zh: '向右微轉' },
+    { re: /\bSlight\s+left\b/gi, zh: '向左微轉' },
+    { re: /\bContinue\s+straight\s+onto\b/gi, zh: '直行進入' },
+    { re: /\bContinue\s+onto\b/gi, zh: '繼續前行進入' },
+    { re: /\bContinue\s+straight\b/gi, zh: '直行' },
+    { re: /\bWalk\s+to\b/gi, zh: '步行至' },
+    { re: /\bTake\s+the\b/gi, zh: '搭乘' },
+    { re: /\bDestination\s+will\s+be\s+on\s+the\s+right\b/gi, zh: '目的地在右側' },
+    { re: /\bDestination\s+will\s+be\s+on\s+the\s+left\b/gi, zh: '目的地在左側' },
+    { re: /\bAt\s+the\s+roundabout,\s+take\s+the\b/gi, zh: '於圓環進入' },
+    { re: /\bPass\s+by\b/gi, zh: '經過' },
+  ]
+
+  for (const { re, zh } of translations) {
+    text = text.replace(re, zh)
+  }
+
+  return text
 }
 
 const preferenceColorMap = {
@@ -567,7 +609,7 @@ async function renderGoogleDirections(origin, destination, preference = 'fastest
       : `大眾運輸約 ${leg.duration?.text || '時間待確認'}`,
     segments: (leg.steps || []).map((step) => ({
       mode: step.travel_mode || (actualMode === window.google.maps.TravelMode.BICYCLING ? 'BICYCLE' : 'TRANSIT'),
-      instruction: step.instructions ? step.instructions.replace(/<[^>]*>/g, ' ') : '依 Google Maps 路線前進',
+      instruction: formatZhTwStepInstruction(step, actualMode),
       duration_minutes: Math.max(1, Math.round((step.duration?.value || 0) / 60)),
       distance_meters: step.distance?.value || 0,
       is_shaded_or_underground: preference === 'more_shading' || step.instructions?.includes('捷運') || step.instructions?.includes('地下'),
@@ -1075,6 +1117,8 @@ async function initMap() {
     const loader = new Loader({
       apiKey: mapsApiKey,
       version: 'weekly',
+      language: 'zh-TW',
+      region: 'TW',
       libraries: ['geometry'],
     })
     await loader.load()
