@@ -116,6 +116,45 @@ const quickPrompts = ref([
 ])
 const quickTags = ref([])
 
+// Date & Time Picker Options (Step 1 & 4)
+const quickDateOptions = [
+  { label: '📅 今天 (8/18)', value: '今天', promptSuffix: '今天想找適合放鬆的活動，不要太熱、人不要太多' },
+  { label: '📅 明天 (8/19)', value: '明天', promptSuffix: '明天下午想找室內展覽與咖啡廳' },
+  { label: '📅 本週末 (8/22-8/23)', value: '本週末', promptSuffix: '8月22日下午想和另一半約會，看展再喝咖啡' },
+  { label: '📅 8月22日 (週五)', value: '8月22日', promptSuffix: '8月22日週五想去當代藝術或特色展覽' },
+  { label: '📅 8月23日 (週六)', value: '8月23日', promptSuffix: '8月23日週六想找人少安靜的地方散步' },
+]
+const selectedDateTag = ref('本週末')
+
+// Active Planned Itinerary & Google Calendar State (Step 9, 11, 12, 14)
+const activePlannedPlace = ref(null)
+
+// PK & Comparison Matrix State (Step 8)
+const pkPlaceIds = ref(new Set())
+const showPkModal = ref(false)
+
+// Share Card & Link State (Step 10)
+const showShareModal = ref(false)
+const shareTargetPlace = ref(null)
+
+// Dynamic Condition Alert & Alternative Plan State (Step 13 & 14)
+const showAlternativeModal = ref(false)
+const alternativePlanData = ref(null)
+
+// Post-event Feedback Modal State (Step 16)
+const showFeedbackModal = ref(false)
+const feedbackTargetPlace = ref(null)
+const feedbackRating = ref(true)
+const selectedFeedbackTags = ref(new Set())
+const feedbackTagsList = [
+  '避開人潮很準確',
+  '地下街遮蔭涼爽',
+  '交通指引清楚',
+  '展覽內容精彩',
+  '人潮比預期多',
+  '步行距離偏遠',
+]
+
 const places = ref([])
 const eventDataSource = createEventDataSource()
 const eventSourceLabel = eventDataSource.label
@@ -124,6 +163,10 @@ const markers = new Map()
 let sheetDragStartY = 0
 let sheetDragStartHeight = 0
 let mapFocusTimer = null
+
+const pkPlaces = computed(() =>
+  places.value.filter((p) => pkPlaceIds.value.has(p.id))
+)
 
 const filters = computed(() => {
   const base = ['為你推薦', '室內避暑', '低人流', '免費入場']
@@ -987,6 +1030,241 @@ async function handleFeedback(eventId, isHelpful, tag) {
   }
 }
 
+// Google Calendar Integration (Step 11 & 14)
+function generateGoogleCalendarUrl(place) {
+  if (!place) return '#'
+  const title = `[SideQuest] ${place.name}`
+  const now = new Date()
+  const startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 14, 0, 0)
+  const endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 17, 0, 0)
+  const formatGCalDate = (d) => d.toISOString().replace(/-|:|\.\d+/g, '')
+  const dates = `${formatGCalDate(startDate)}/${formatGCalDate(endDate)}`
+  const details = [
+    `🎪 活動名稱：${place.name}`,
+    `📍 活動地址：${place.address || '台北市'}`,
+    `🕒 時間時段：${place.dateRange || '當期活動'} (${place.time || '14:00 - 17:00'})`,
+    `🚇 交通建議：${place.transit_summary || '捷運直達 / 大眾運輸'}`,
+    `👥 人流狀況：${crowdLabel(place.crowd)} (${place.crowd || 30})`,
+    `☀️ 曝曬指數：${place.isIndoor ? '室內空調 (0% 曝曬)' : `戶外曝曬 ${place.sun || 30}%`}`,
+    `🎫 門票標準：${place.fee || '免費入場 / 依現場公告'}`,
+    `🔗 官方連結：${place.sourceUrl || window.location.href}`,
+    '',
+    '✨ 由 SideQuest 智慧城市 Agent 自動規劃生成',
+  ].join('\n')
+  const params = new URLSearchParams({
+    action: 'TEMPLATE',
+    text: title,
+    dates: dates,
+    details: details,
+    location: place.address || place.name || '台北市',
+  })
+  return `https://calendar.google.com/calendar/render?${params.toString()}`
+}
+
+function addToGoogleCalendar(place) {
+  if (!place) return
+  activePlannedPlace.value = place
+  const url = generateGoogleCalendarUrl(place)
+  window.open(url, '_blank', 'noopener,noreferrer')
+  Snackbar.success(`已將「${place.name}」加入 Google Calendar，並鎖定為進行中行程！`)
+}
+
+function cancelActivePlan() {
+  activePlannedPlace.value = null
+  Snackbar.info('已清除進行中行程鎖定')
+}
+
+// Smart Departure & Arrival Advice (Step 6 & 12)
+function getSmartDepartureAdvice(place) {
+  if (!place) return { summary: '建議出發時間計算中…', text: '建議現在出發', crowdBuffer: '離峰舒適', depStr: '14:15', arrStr: '14:45' }
+  const crowd = Number.isFinite(place.crowd) ? place.crowd : 45
+  const durationMin = activeRoute.value?.durationMinutes || 25
+  const now = new Date()
+  const depTime = new Date(now.getTime() + 10 * 60000)
+  const arrTime = new Date(depTime.getTime() + durationMin * 60000)
+  const formatTime = (d) => `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+  const depStr = formatTime(depTime)
+  const arrStr = formatTime(arrTime)
+
+  let crowdNote = '離峰舒適時段'
+  let reason = '避開下一波尖峰人流'
+  if (crowd > 65) {
+    crowdNote = '人潮較多'
+    reason = '建議提早出發以利排隊進場'
+  } else if (crowd < 35) {
+    crowdNote = '最佳觀展時機'
+    reason = '目前場館人流寬鬆，體驗最佳'
+  }
+
+  return {
+    depStr,
+    arrStr,
+    crowdNote,
+    summary: `建議 ${depStr} 出發 · 預計 ${arrStr} 抵達`,
+    text: `建議於 ${depStr} 出發（${reason}），車程約 ${durationMin} 分鐘，預計於 ${arrStr} 順利抵達。`,
+    crowdBuffer: crowdNote,
+  }
+}
+
+// External Google Maps Navigation (Step 15)
+function openGoogleMapsNavigation(place) {
+  if (!place) return
+  const origin = `${userLocation.value.lat},${userLocation.value.lng}`
+  const destination = place.position ? `${place.position.lat},${place.position.lng}` : encodeURIComponent(place.address || place.name)
+  const url = `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${destination}&travelmode=transit`
+  window.open(url, '_blank', 'noopener,noreferrer')
+}
+
+// Quick Date Tag Selection (Step 1 & 4)
+function selectDateTag(dateOpt) {
+  selectedDateTag.value = dateOpt.label
+  prompt.value = dateOpt.promptSuffix
+  explore()
+}
+
+// PK Comparison Matrix Methods (Step 8)
+function togglePkPlace(place) {
+  if (!place) return
+  if (pkPlaceIds.value.has(place.id)) {
+    pkPlaceIds.value.delete(place.id)
+    Snackbar.info(`已將「${place.name}」移出 PK 比較`)
+  } else {
+    if (pkPlaceIds.value.size >= 3) {
+      Snackbar.warning('最多同時比較 3 個活動，請先移除其他活動')
+      return
+    }
+    pkPlaceIds.value.add(place.id)
+    Snackbar.success(`已加入 PK 比較 (${pkPlaceIds.value.size}/3)`)
+  }
+}
+
+function clearPk() {
+  pkPlaceIds.value.clear()
+  Snackbar.info('已清空 PK 比較清單')
+}
+
+function selectPkWinner(place) {
+  showPkModal.value = false
+  openPlaceDetails(place)
+  addToGoogleCalendar(place)
+}
+
+// Share Modal Methods (Step 10)
+function openShareModal(place) {
+  shareTargetPlace.value = place || detailPlace.value || activePlannedPlace.value || places.value[0]
+  showShareModal.value = true
+}
+
+function formatShareText(place) {
+  if (!place) return ''
+  return [
+    `🎪【SideQuest 台北活動推薦】`,
+    `✨ ${place.name}`,
+    `🗓️ 時間：${place.dateRange || '當期活動'} (${place.time || '14:00 - 17:00'})`,
+    `📍 地點：${place.address || '台北市'}`,
+    `🚇 交通：${place.transit_summary || '捷運/大眾運輸直達'}`,
+    `👥 人流：${crowdLabel(place.crowd)} (${place.crowd || 30})`,
+    `☀️ 曝曬：${place.isIndoor ? '室內空調 (0% 曝曬)' : `戶外曝曬 ${place.sun || 30}%`}`,
+    `🎫 門票：${place.fee || '免費入場'}`,
+    `🔗 活動連結：${place.sourceUrl || window.location.href}`,
+    ``,
+    `👉 使用 SideQuest 智慧城市 Agent 規劃：${window.location.origin}`,
+  ].join('\n')
+}
+
+async function copyShareText(place) {
+  const text = formatShareText(place)
+  try {
+    await navigator.clipboard.writeText(text)
+    Snackbar.success('已複製活動分享資訊至剪貼簿！')
+  } catch (err) {
+    Snackbar.success('已準備分享文字！')
+  }
+}
+
+function shareToLine(place) {
+  const text = formatShareText(place)
+  const lineUrl = `https://social-plugins.line.me/lineit/share?url=${encodeURIComponent(window.location.href)}&text=${encodeURIComponent(text)}`
+  window.open(lineUrl, '_blank', 'noopener,noreferrer')
+}
+
+// Dynamic Condition Alert & Alternative Plan Overwrite (Step 13 & 14)
+function triggerSimulateConditionChange(originalPlace) {
+  const current = originalPlace || detailPlace.value || activePlannedPlace.value || places.value[0]
+  if (!current) return
+  const indoorCandidates = places.value.filter((p) => p.id !== current.id && p.isIndoor)
+  const alt = indoorCandidates.length > 0 ? indoorCandidates[0] : (places.value.find((p) => p.id !== current.id) || current)
+
+  alternativePlanData.value = {
+    original: current,
+    alternative: alt,
+    alertTitle: '⚠️ 行前突發警報：天候驟變與人流暴增',
+    alertMessage: `原定活動【${current.name}】目的地目前降雨機率攀升至 85%，且現場人流擁擠度已達 88 (嚴重壅塞)！`,
+    agentAdvice: `Agent 依據智慧城市微氣候與即時人流演算法，為您推薦相同性質的室內備案：【${alt.name}】。`,
+    benefits: [
+      '❄️ 室內空調場館，0% 紫外線曝曬，完全不受雷雨影響',
+      `👥 即時人流指數僅 ${alt.crowd || 25} (舒適寬敞，無需排隊)`,
+      '🚇 捷運連通地下街，出站步行直達',
+    ],
+  }
+  showAlternativeModal.value = true
+}
+
+function applyAlternativePlan() {
+  if (!alternativePlanData.value?.alternative) return
+  const newPlace = alternativePlanData.value.alternative
+  showAlternativeModal.value = false
+  activePlannedPlace.value = newPlace
+  openPlaceDetails(newPlace)
+  planRouteToPlace(newPlace)
+  const url = generateGoogleCalendarUrl(newPlace)
+  window.open(url, '_blank', 'noopener,noreferrer')
+  Snackbar.success(`已成功改用【${newPlace.name}】並更新 Google Calendar 行程！`)
+}
+
+function dismissAlternativePlan() {
+  showAlternativeModal.value = false
+  Snackbar.info('已維持原定計畫。出門請攜帶雨具並留意現場人潮！')
+}
+
+// Post-event Feedback Dialog (Step 16)
+function openFeedbackModal(place, isHelpful = true) {
+  feedbackTargetPlace.value = place || detailPlace.value || places.value[0]
+  feedbackRating.value = isHelpful
+  selectedFeedbackTags.value.clear()
+  showFeedbackModal.value = true
+}
+
+function toggleFeedbackTag(tag) {
+  if (selectedFeedbackTags.value.has(tag)) {
+    selectedFeedbackTags.value.delete(tag)
+  } else {
+    selectedFeedbackTags.value.add(tag)
+  }
+}
+
+async function submitDetailedFeedback() {
+  const place = feedbackTargetPlace.value
+  if (place) {
+    feedbackMap.value.set(place.id, {
+      isHelpful: feedbackRating.value,
+      tags: Array.from(selectedFeedbackTags.value),
+    })
+    try {
+      await agentService.submitFeedback?.({
+        event_id: place.id,
+        user_id: activePersona.value.id,
+        is_helpful: feedbackRating.value,
+        feedback_tags: Array.from(selectedFeedbackTags.value),
+      })
+    } catch (e) {
+      console.warn('Feedback submit fallback:', e)
+    }
+  }
+  showFeedbackModal.value = false
+  Snackbar.success('感謝您的回饋！Agent 已吸收並更新您的偏好模型。')
+}
+
 function updateUserLocationMarker() {
   if (!map.value || !window.google?.maps || !hasUserLocation.value) return
   userLocationOverlay?.setMap(null)
@@ -1301,6 +1579,11 @@ onMounted(async () => {
             <h1>{{ detailPlace.name }}</h1>
             <strong>{{ detailPlace.address }}</strong>
             <small>{{ detailPlace.dateRange }}</small>
+            <!-- Smart Departure & Arrival Advice (Step 6 & 12) -->
+            <div class="smart-timing-strip">
+              <span class="timing-badge">🕒 智慧出發建議</span>
+              <span>{{ getSmartDepartureAdvice(detailPlace).text }}</span>
+            </div>
           </div>
         </div>
 
@@ -1309,8 +1592,14 @@ onMounted(async () => {
             <span aria-hidden="true">⌁</span>
             <strong>{{ routeLoading ? '規劃中…' : '規劃路線' }}</strong>
           </button>
-          <button type="button" @click="revealPlaceOnMap(detailPlace)">
-            <span aria-hidden="true">⌖</span><strong>查看地圖</strong>
+          <button type="button" class="btn-gcal" @click="addToGoogleCalendar(detailPlace)">
+            <span aria-hidden="true">📅</span><strong>加行事曆</strong>
+          </button>
+          <button type="button" :class="{ active: pkPlaceIds.has(detailPlace.id) }" @click="togglePkPlace(detailPlace)">
+            <span aria-hidden="true">⚖️</span><strong>{{ pkPlaceIds.has(detailPlace.id) ? '已加PK' : 'PK比較' }}</strong>
+          </button>
+          <button type="button" @click="openShareModal(detailPlace)">
+            <span aria-hidden="true">🔗</span><strong>分享卡片</strong>
           </button>
           <button
             type="button"
@@ -1320,8 +1609,14 @@ onMounted(async () => {
             <span aria-hidden="true">{{ favoritePlaceIds.has(detailPlace.id) ? '♥' : '♡' }}</span>
             <strong>{{ favoritePlaceIds.has(detailPlace.id) ? '已收藏' : '收藏' }}</strong>
           </button>
+          <button type="button" class="btn-sim-alert" @click="triggerSimulateConditionChange(detailPlace)" title="模擬天候驟變與人潮暴增之備案">
+            <span aria-hidden="true">🚨</span><strong>模擬備案</strong>
+          </button>
+          <button type="button" @click="openGoogleMapsNavigation(detailPlace)">
+            <span aria-hidden="true">🗺️</span><strong>Google導航</strong>
+          </button>
           <a v-if="detailPlace.sourceUrl" :href="detailPlace.sourceUrl" target="_blank" rel="noopener noreferrer">
-            <span aria-hidden="true">↗</span><strong>活動來源</strong>
+            <span aria-hidden="true">↗</span><strong>活動官網</strong>
           </a>
         </nav>
 
@@ -1596,6 +1891,29 @@ onMounted(async () => {
           </div>
         </div>
 
+        <!-- Active Planned Trip Banner (Step 9, 11, 13) -->
+        <div v-if="activePlannedPlace" class="active-plan-banner">
+          <div class="active-plan-main" @click="openPlaceDetails(activePlannedPlace)">
+            <div class="active-plan-header">
+              <span class="active-plan-badge"><span class="pulse-dot"></span> 進行中行程 · 已同步 Google Calendar</span>
+              <small class="active-plan-timing">{{ getSmartDepartureAdvice(activePlannedPlace).summary }}</small>
+            </div>
+            <strong class="active-plan-title">{{ activePlannedPlace.name }}</strong>
+            <p class="active-plan-meta">{{ activePlannedPlace.address }} · {{ activePlannedPlace.dateRange }} · 人流 {{ crowdLabel(activePlannedPlace.crowd) }}</p>
+          </div>
+          <div class="active-plan-btns">
+            <button type="button" class="plan-btn plan-btn-alert" @click="triggerSimulateConditionChange(activePlannedPlace)" title="模擬午後雷雨或人潮暴增警報">
+              🚨 模擬突發變更
+            </button>
+            <button type="button" class="plan-btn" @click="openShareModal(activePlannedPlace)">
+              🔗 分享
+            </button>
+            <button type="button" class="plan-btn plan-btn-close" @click="cancelActivePlan" title="取消鎖定行程">
+              ✕
+            </button>
+          </div>
+        </div>
+
         <!-- Natural Language Prompt Composer -->
         <div class="prompt-composer">
           <div class="prompt-icon">✦</div>
@@ -1611,6 +1929,21 @@ onMounted(async () => {
           <Button class="explore-button" type="primary" round :loading="isExploring" @click="explore">
             <span v-if="!isExploring">探索 <span class="button-arrow">↗</span></span>
           </Button>
+        </div>
+
+        <!-- Quick Date & Time Picker Chips (Step 1 & 4) -->
+        <div class="quick-dates-row">
+          <span class="date-selector-label">活動日期：</span>
+          <button
+            v-for="dateOpt in quickDateOptions"
+            :key="dateOpt.label"
+            type="button"
+            class="quick-date-chip"
+            :class="{ active: selectedDateTag === dateOpt.label }"
+            @click="selectDateTag(dateOpt)"
+          >
+            {{ dateOpt.label }}
+          </button>
         </div>
 
         <!-- Quick Prompts Chips -->
@@ -1655,30 +1988,28 @@ onMounted(async () => {
               <small>{{ showThoughtTrace ? '收合 ▲' : '展開 ▼' }}</small>
             </button>
             <div v-if="showThoughtTrace" class="thought-steps-list">
-              <div v-for="step in aiThoughtSteps" :key="step.step" class="thought-step-item">
-                <div class="step-index">0{{ step.step }}</div>
+              <div v-for="(step, idx) in aiThoughtSteps" :key="idx" class="thought-step-item">
+                <span class="step-badge">{{ step.step || `STEP 0${idx + 1}` }}</span>
                 <div class="step-body">
-                  <strong>{{ step.title }}</strong>
-                  <p>{{ step.thought }}</p>
+                  <strong>{{ step.title || step.action }}</strong>
+                  <p>{{ step.detail || step.thought || step.output }}</p>
                 </div>
               </div>
             </div>
           </div>
 
-          <!-- Agent Markdown Stream Output -->
-          <p v-if="isExploring && !aiReply" class="agent-loading-copy">正在透過 SideQuest 多準則引擎評估活動與交通條件…</p>
-          <p v-else-if="aiError" class="agent-error-copy">{{ aiError }}</p>
-          <p v-else class="agent-markdown-text">{{ aiReply }}</p>
+          <p v-if="aiReply" class="agent-markdown-text">{{ aiReply }}</p>
+          <p v-if="aiError" class="agent-error-text">{{ aiError }}</p>
         </div>
 
-        <!-- 3 PRD Recommendation Cards (PRD 7.4 & 8.3) -->
-        <section v-if="aiRecommendations.length" class="agent-recommendations-section" aria-label="3 大推薦卡片">
+        <!-- PRD Section 6 Multi-criteria Recommendation Cards -->
+        <section v-if="aiRecommendations.length" class="agent-recommendations-section">
           <div class="agent-rec-header">
             <div>
-              <span class="rec-kicker">PRD 3-TIER RECOMMENDATIONS</span>
-              <h2>城市決策提案</h2>
+              <span class="rec-kicker">AGENT PICKS · 智慧城市多準則決策</span>
+              <h2>為你量身打造的推薦方案</h2>
             </div>
-            <strong>共評估 {{ aiEvaluatedCount || places.length }} 個符合日期的活動</strong>
+            <strong v-if="aiEvaluatedCount">已即時評估 {{ aiEvaluatedCount }} 場活動與路徑</strong>
           </div>
 
           <div class="recommendations-grid">
@@ -1726,20 +2057,39 @@ onMounted(async () => {
 
               <div class="rec-card-footer">
                 <span class="rec-transit-guide">⌁ {{ card.transit_summary || '捷運直達' }}</span>
-                <div class="rec-feedback-actions" @click.stop>
+                <div class="rec-card-actions" @click.stop>
+                  <button
+                    type="button"
+                    class="rec-action-btn"
+                    title="加入 Google Calendar"
+                    @click="addToGoogleCalendar(places.find(p => p.id === card.event?.id) || card.event)"
+                  >📅</button>
+                  <button
+                    type="button"
+                    class="rec-action-btn"
+                    :class="{ active: pkPlaceIds.has(card.event?.id) }"
+                    title="加入 PK 比較"
+                    @click="togglePkPlace(places.find(p => p.id === card.event?.id) || card.event)"
+                  >⚖️</button>
+                  <button
+                    type="button"
+                    class="rec-action-btn"
+                    title="生成分享卡片"
+                    @click="openShareModal(places.find(p => p.id === card.event?.id) || card.event)"
+                  >🔗</button>
                   <button
                     type="button"
                     class="feedback-btn"
                     :class="{ active: feedbackMap.get(card.event?.id)?.isHelpful === true }"
                     title="推薦精準，很喜歡"
-                    @click="handleFeedback(card.event?.id, true, 'accurate')"
+                    @click="openFeedbackModal(places.find(p => p.id === card.event?.id) || card.event, true)"
                   >👍</button>
                   <button
                     type="button"
                     class="feedback-btn"
                     :class="{ active: feedbackMap.get(card.event?.id)?.isHelpful === false }"
-                    title="人潮偏多或距離較遠"
-                    @click="handleFeedback(card.event?.id, false, 'too_crowded')"
+                    title="人潮偏多或提供建議"
+                    @click="openFeedbackModal(places.find(p => p.id === card.event?.id) || card.event, false)"
                   >👎</button>
                 </div>
               </div>
@@ -1765,9 +2115,9 @@ onMounted(async () => {
             <h2>{{ selectedTab === 'saved' ? '我的收藏活動' : '全部城市探索清單' }}</h2>
           </div>
           <button
-            v-if="selectedTab !== 'saved'"
-            class="view-all"
+            v-if="activeFilter !== '為你推薦'"
             type="button"
+            class="view-all"
             @click="activeFilter = '為你推薦'"
           >
             重置篩選 <span>↺</span>
@@ -1826,6 +2176,25 @@ onMounted(async () => {
               <div v-if="Number.isFinite(place.crowd)" class="crowd-progress" :title="place.crowdIsMock ? 'MVP 模擬人流資料' : '人流資料'">
                 <Progress :value="place.crowd" :color="place.color" track-color="#edece7" :height="4" />
               </div>
+
+              <!-- Quick Place Card Actions -->
+              <div class="place-card-bottom-bar" @click.stop>
+                <button type="button" class="card-mini-btn" title="加入 Google Calendar" @click="addToGoogleCalendar(place)">
+                  <span>📅</span> 加行事曆
+                </button>
+                <button
+                  type="button"
+                  class="card-mini-btn"
+                  :class="{ active: pkPlaceIds.has(place.id) }"
+                  title="加入 PK 比較"
+                  @click="togglePkPlace(place)"
+                >
+                  <span>⚖️</span> {{ pkPlaceIds.has(place.id) ? '已加 PK' : 'PK 比較' }}
+                </button>
+                <button type="button" class="card-mini-btn" title="分享活動卡片" @click="openShareModal(place)">
+                  <span>🔗</span> 分享
+                </button>
+              </div>
             </div>
             <button
               type="button"
@@ -1840,6 +2209,265 @@ onMounted(async () => {
         </div>
       </div>
     </section>
+
+    <!-- Floating PK Bottom Bar (Step 8) -->
+    <div v-if="pkPlaces.length > 0" class="floating-pk-bar">
+      <div class="pk-bar-info" @click="showPkModal = true">
+        <span class="pk-bar-icon">⚖️</span>
+        <div>
+          <strong>活動 PK 比較 ({{ pkPlaces.length }}/3)</strong>
+          <small>點擊展開多準則對比矩陣 (人潮、遮蔭、車程、票價)</small>
+        </div>
+      </div>
+      <div class="pk-bar-actions">
+        <button type="button" class="pk-matrix-open-btn" @click="showPkModal = true">
+          查看 PK 矩陣 ↗
+        </button>
+        <button type="button" class="pk-bar-clear-btn" @click="clearPk" title="清空清單">
+          ✕
+        </button>
+      </div>
+    </div>
+
+    <!-- 1. Alternative Plan Modal (Step 13 & 14) -->
+    <div v-if="showAlternativeModal && alternativePlanData" class="sidequest-modal-overlay" @click.self="dismissAlternativePlan">
+      <div class="sidequest-modal alt-modal">
+        <header class="sidequest-modal-header alt-modal-header">
+          <div>
+            <span class="alt-tag">🚨 天候與人流突發警報 · STEP 13-14</span>
+            <h2>{{ alternativePlanData.alertTitle }}</h2>
+          </div>
+          <button type="button" class="modal-close-btn" @click="dismissAlternativePlan">×</button>
+        </header>
+
+        <div class="alt-alert-box">
+          <p>{{ alternativePlanData.alertMessage }}</p>
+          <small>{{ alternativePlanData.agentAdvice }}</small>
+        </div>
+
+        <div class="alt-comparison-cards">
+          <div class="alt-card original">
+            <span class="alt-card-kicker">原定計畫</span>
+            <h3>{{ alternativePlanData.original?.name }}</h3>
+            <div class="alt-card-metrics">
+              <span class="metric-alert">🌧 降雨機率 85%</span>
+              <span class="metric-alert">👥 人流指數 88 (嚴重擁擠)</span>
+              <span>🚇 戶外換乘步行 12 分鐘</span>
+            </div>
+          </div>
+          <div class="alt-vs-badge">VS</div>
+          <div class="alt-card recommended">
+            <span class="alt-card-kicker recommended-kicker">✨ AGENT 推薦室內備案</span>
+            <h3>{{ alternativePlanData.alternative?.name }}</h3>
+            <div class="alt-card-metrics">
+              <span class="metric-good">❄️ 室內 0% 曝曬/完全防雨</span>
+              <span class="metric-good">👥 人流指數 {{ alternativePlanData.alternative?.crowd || 25 }} (寬敞舒適)</span>
+              <span class="metric-good">🚇 地下街直通免淋雨</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="alt-benefits-list">
+          <strong>備案優勢：</strong>
+          <ul>
+            <li v-for="(b, i) in alternativePlanData.benefits" :key="i">{{ b }}</li>
+          </ul>
+        </div>
+
+        <footer class="alt-modal-footer">
+          <button type="button" class="alt-btn-secondary" @click="dismissAlternativePlan">
+            維持原計畫 (忽略警報)
+          </button>
+          <button type="button" class="alt-btn-primary" @click="applyAlternativePlan">
+            ✨ 改用這個方案並更新行事曆
+          </button>
+        </footer>
+      </div>
+    </div>
+
+    <!-- 2. PK Comparison Matrix Modal (Step 8) -->
+    <div v-if="showPkModal" class="sidequest-modal-overlay" @click.self="showPkModal = false">
+      <div class="sidequest-modal pk-modal">
+        <header class="sidequest-modal-header">
+          <div>
+            <span>MULTI-EVENT PK MATRIX · STEP 8</span>
+            <h2>活動多準則 PK 對比矩陣</h2>
+          </div>
+          <button type="button" class="modal-close-btn" @click="showPkModal = false">×</button>
+        </header>
+        <p class="persona-intro">已選取 {{ pkPlaces.length }} 個活動，直接比較即時人流、微氣候遮蔭、大眾運輸與費用：</p>
+
+        <div v-if="pkPlaces.length === 0" class="events-state">
+          尚未選取任何 PK 活動，請在卡片點擊「⚖️ PK 比較」加入活動。
+        </div>
+        <div v-else class="pk-matrix-scroll-wrapper">
+          <table class="pk-matrix-table">
+            <thead>
+              <tr>
+                <th class="matrix-metric-col">評估維度</th>
+                <th v-for="p in pkPlaces" :key="p.id" class="matrix-place-col">
+                  <strong>{{ p.name }}</strong>
+                  <small>{{ p.category }} · {{ p.district }}</small>
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>👥 人流擁擠程度</td>
+                <td v-for="p in pkPlaces" :key="`crowd-${p.id}`">
+                  <span class="metric crowd-metric" :class="crowdClass(p.crowd)">
+                    {{ crowdLabel(p.crowd) }} ({{ p.crowd }})
+                  </span>
+                </td>
+              </tr>
+              <tr>
+                <td>☀️ 遮蔭率 / 曝曬度</td>
+                <td v-for="p in pkPlaces" :key="`sun-${p.id}`">
+                  <strong>{{ p.isIndoor ? '❄️ 室內 0% 曝曬' : `☀️ 曝曬 ${p.sun}% (遮蔭 ${p.shade || 60}%)` }}</strong>
+                </td>
+              </tr>
+              <tr>
+                <td>🚇 交通時間與費用</td>
+                <td v-for="p in pkPlaces" :key="`transit-${p.id}`">
+                  <strong>車程約 25 分 · NT$20~25</strong>
+                  <small>{{ p.transit_summary || '捷運板南線/淡水信義線直達' }}</small>
+                </td>
+              </tr>
+              <tr>
+                <td>🎟 門票標準</td>
+                <td v-for="p in pkPlaces" :key="`fee-${p.id}`">
+                  <strong>{{ p.fee || '免費參觀' }}</strong>
+                </td>
+              </tr>
+              <tr>
+                <td>🕒 智慧出發建議</td>
+                <td v-for="p in pkPlaces" :key="`timing-${p.id}`">
+                  <small>{{ getSmartDepartureAdvice(p).summary }}</small>
+                </td>
+              </tr>
+              <tr>
+                <td>🎯 決策動作</td>
+                <td v-for="p in pkPlaces" :key="`act-${p.id}`">
+                  <div class="pk-action-btns">
+                    <button type="button" class="pk-win-btn" @click="selectPkWinner(p)">
+                      🎯 選定此行程
+                    </button>
+                    <button type="button" class="pk-cal-btn" @click="addToGoogleCalendar(p)">
+                      📅 加行事曆
+                    </button>
+                    <button type="button" class="pk-remove-link" @click="togglePkPlace(p)">
+                      移除
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- 3. Share Card Modal (Step 10) -->
+    <div v-if="showShareModal && shareTargetPlace" class="sidequest-modal-overlay" @click.self="showShareModal = false">
+      <div class="sidequest-modal share-modal">
+        <header class="sidequest-modal-header">
+          <div>
+            <span>SOCIAL SHARE CARD · STEP 10</span>
+            <h2>生成活動分享卡片</h2>
+          </div>
+          <button type="button" class="modal-close-btn" @click="showShareModal = false">×</button>
+        </header>
+
+        <!-- Social Preview Card -->
+        <div class="share-card-preview" :style="{ '--share-accent': shareTargetPlace.color }">
+          <div class="share-card-topbar">
+            <span class="share-brand">SIDEQUEST 智慧活動</span>
+            <span class="share-badge">{{ shareTargetPlace.category }}</span>
+          </div>
+          <h3 class="share-title">{{ shareTargetPlace.name }}</h3>
+          <p class="share-meta">📍 {{ shareTargetPlace.address }}</p>
+          <p class="share-meta">🗓️ {{ shareTargetPlace.dateRange }} ({{ shareTargetPlace.time }})</p>
+          <div class="share-metrics-strip">
+            <span>👥 人流：{{ crowdLabel(shareTargetPlace.crowd) }}</span>
+            <span>☀️ {{ shareTargetPlace.isIndoor ? '室內空調' : `曝曬 ${shareTargetPlace.sun}%` }}</span>
+            <span>🎫 {{ shareTargetPlace.fee || '免費入場' }}</span>
+          </div>
+          <div class="share-transit-tag">
+            🚇 建議交通：{{ shareTargetPlace.transit_summary || '捷運大眾運輸直達' }}
+          </div>
+          <div class="share-card-footer">
+            <small>✨ 由 SideQuest 智慧城市 Agent 規劃生成</small>
+          </div>
+        </div>
+
+        <footer class="share-modal-actions">
+          <button type="button" class="share-action-primary" @click="copyShareText(shareTargetPlace)">
+            📋 複製分享文字與連結
+          </button>
+          <button type="button" class="share-action-line" @click="shareToLine(shareTargetPlace)">
+            💬 透過 LINE 一鍵分享
+          </button>
+          <button type="button" class="share-action-gcal" @click="addToGoogleCalendar(shareTargetPlace)">
+            📅 加入 Google Calendar
+          </button>
+        </footer>
+      </div>
+    </div>
+
+    <!-- 4. Post-event Feedback Modal (Step 16) -->
+    <div v-if="showFeedbackModal && feedbackTargetPlace" class="sidequest-modal-overlay" @click.self="showFeedbackModal = false">
+      <div class="sidequest-modal feedback-modal">
+        <header class="sidequest-modal-header">
+          <div>
+            <span>AGENT FEEDBACK · STEP 16</span>
+            <h2>活動與推薦意見回饋</h2>
+          </div>
+          <button type="button" class="modal-close-btn" @click="showFeedbackModal = false">×</button>
+        </header>
+        <p class="persona-intro">針對【{{ feedbackTargetPlace.name }}】，此推薦是否符合您的期待？</p>
+
+        <div class="feedback-rating-row">
+          <button
+            type="button"
+            class="feedback-choice-btn"
+            :class="{ active: feedbackRating === true }"
+            @click="feedbackRating = true"
+          >
+            👍 符合期待 / 體驗良好
+          </button>
+          <button
+            type="button"
+            class="feedback-choice-btn"
+            :class="{ active: feedbackRating === false }"
+            @click="feedbackRating = false"
+          >
+            👎 不太符合 / 需改進
+          </button>
+        </div>
+
+        <div class="feedback-tags-section">
+          <label>可複選回饋標籤：</label>
+          <div class="feedback-tags-grid">
+            <button
+              v-for="tag in feedbackTagsList"
+              :key="tag"
+              type="button"
+              class="feedback-tag-chip"
+              :class="{ active: selectedFeedbackTags.has(tag) }"
+              @click="toggleFeedbackTag(tag)"
+            >
+              {{ tag }}
+            </button>
+          </div>
+        </div>
+
+        <footer class="feedback-modal-footer">
+          <button type="button" class="alt-btn-primary" @click="submitDetailedFeedback">
+            送出回饋並更新偏好模型
+          </button>
+        </footer>
+      </div>
+    </div>
 
     <!-- Persona Switcher Modal (PRD 7.1) -->
     <div v-if="showPersonaModal" class="persona-modal-overlay" @click.self="showPersonaModal = false">
