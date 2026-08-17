@@ -8,6 +8,7 @@ import time
 from typing import Any, AsyncGenerator, Dict, List, Optional, Tuple
 import uuid
 
+from app.agent.date_parser import parse_natural_date_time
 from app.agent.prompt_templates import SYSTEM_PROMPT
 from app.agent.ranking_engine import ranking_engine
 from app.agent.tools import get_tool_registry
@@ -23,7 +24,7 @@ from app.models.agent import (
     SSEEvent,
     SSEEventType,
 )
-from app.models.event import RecommendationCard
+from app.models.event import EventFilter, RecommendationCard
 from app.services.crowd_service import get_crowd_service
 from app.services.event_service import get_event_service
 from app.services.interfaces import (
@@ -76,6 +77,12 @@ class GeminiAgent:
             avoid_crowd = prev_criteria.avoid_crowd
             prefer_indoor = prev_criteria.prefer_indoor
             assumptions = list(prev_criteria.assumptions)
+            requested_date = prev_criteria.requested_date
+            requested_date_end = prev_criteria.requested_date_end
+            requested_start_time = prev_criteria.requested_start_time
+            requested_end_time = prev_criteria.requested_end_time
+            date_resolution = prev_criteria.date_resolution
+            occasion = prev_criteria.occasion
             is_refinement = True
         else:
             date_time = "本週末下午"
@@ -87,6 +94,12 @@ class GeminiAgent:
             avoid_crowd = True
             prefer_indoor = True
             assumptions = ["預設以台北市捷運沿線為範圍", "優先推薦具備空調避暑之場館"]
+            requested_date = None
+            requested_date_end = None
+            requested_start_time = None
+            requested_end_time = None
+            date_resolution = "unspecified"
+            occasion = None
             is_refinement = False
 
         # 1. District extraction
@@ -98,15 +111,28 @@ class GeminiAgent:
                     delta_summary += f"已將搜尋區域限制為【{district}】；"
                 break
 
-        # 2. Date/Time extraction
-        if "今天" in query or "今日" in query:
-            date_time = "今天"
-        elif "週六" in query or "星期六" in query:
-            date_time = "週六下午"
-        elif "週日" in query or "星期日" in query:
-            date_time = "週日下午"
+        # 2. Date/Time extraction. Keep the human-readable label and normalized
+        # values together so the same window can be used by the catalog filter.
+        parsed_window = parse_natural_date_time(query)
+        if parsed_window:
+            date_time = parsed_window.label
+            requested_date = parsed_window.start_date.isoformat()
+            requested_date_end = parsed_window.end_date.isoformat()
+            requested_start_time = parsed_window.start_time.strftime("%H:%M") if parsed_window.start_time else None
+            requested_end_time = parsed_window.end_time.strftime("%H:%M") if parsed_window.end_time else None
+            date_resolution = parsed_window.resolution
+            if is_refinement:
+                delta_summary += f"已將活動日期調整為【{date_time}】；"
 
-        # 3. Budget extraction (PRD 7.6: "只看免費的", "500元內")
+        # 3. Occasion extraction for date planning (especially date/partner queries).
+        if any(token in q for token in ("約會", "另一半", "男朋友", "女朋友", "情侶", "浪漫")):
+            occasion = "約會"
+            if "浪漫約會" not in interests:
+                interests.append("浪漫約會")
+        elif any(token in q for token in ("親子", "小孩", "孩子")):
+            occasion = "親子"
+
+        # 4. Budget extraction (PRD 7.6: "只看免費的", "500元內")
         if "免費" in query:
             is_free = True
             max_budget = 0
@@ -119,13 +145,13 @@ class GeminiAgent:
                 if is_refinement:
                     delta_summary += f"已限制預算上限為【{max_budget} 元以內】；"
 
-        # 4. Crowd preference (PRD 7.6: "不想去太多人", "避開人潮")
+        # 5. Crowd preference (PRD 7.6: "不想去太多人", "避開人潮")
         if any(w in query for w in ["不要太擠", "不想人擠人", "太多人", "避開人潮", "少人"]):
             avoid_crowd = True
             if is_refinement:
                 delta_summary += "已嚴格啟用【避開人潮優先機制】；"
 
-        # 5. Indoor / Outdoor preference
+        # 6. Indoor / Outdoor preference
         if "室內" in query or "吹冷氣" in query:
             prefer_indoor = True
             if is_refinement:
@@ -135,13 +161,13 @@ class GeminiAgent:
             if is_refinement:
                 delta_summary += "已切換為【戶外體驗活動】；"
 
-        # 6. Distance / Transit preference (PRD 7.6: "第二個太遠了", "太遠", "近一點")
+        # 7. Distance / Transit preference (PRD 7.6: "第二個太遠了", "太遠", "近一點")
         if any(w in query for w in ["太遠", "近一點", "走不到", "捷運直達"]):
             max_travel = 25
             if is_refinement:
                 delta_summary += "已縮減可接受交通距離至【25分鐘以內/捷運直達】；"
 
-        # 7. Interests / Topics extraction
+        # 8. Interests / Topics extraction
         topic_map = {
             "ai": "AI 人工智慧",
             "agent": "AI Agent",
@@ -176,6 +202,12 @@ class GeminiAgent:
             max_travel_minutes=max_travel,
             avoid_crowd=avoid_crowd,
             prefer_indoor=prefer_indoor,
+            requested_date=requested_date,
+            requested_date_end=requested_date_end,
+            requested_start_time=requested_start_time,
+            requested_end_time=requested_end_time,
+            date_resolution=date_resolution,
+            occasion=occasion,
             assumptions=assumptions,
             clarification_question=None,
         )
@@ -243,13 +275,24 @@ class GeminiAgent:
         # =========================================================================
         # Stage 2: Event Discovery across Catalogs (PRD 6 Stage 4)
         # =========================================================================
+        event_search_args = {
+            "keyword": user_msg,
+            "limit": 10,
+            "start_date": parsed_criteria.requested_date,
+            "end_date": parsed_criteria.requested_date_end,
+            "start_time": parsed_criteria.requested_start_time,
+            "end_time": parsed_criteria.requested_end_time,
+        }
         yield SSEEvent(
             event=SSEEventType.TOOL_CALL,
-            data={"tool": "search_events", "args": {"keyword": user_msg[:30], "limit": 10}},
+            data={"tool": "search_events", "args": {k: v for k, v in event_search_args.items() if v is not None}},
         )
-        event_tool_res = await self._execute_tool("search_events", {"keyword": user_msg, "limit": 10})
+        event_tool_res = await self._execute_tool("search_events", event_search_args)
         if event_tool_res.get("total_found", 0) == 0:
-            event_tool_res = await self._execute_tool("search_events", {"limit": 10})
+            event_tool_res = await self._execute_tool(
+                "search_events",
+                {k: v for k, v in event_search_args.items() if k != "keyword" and v is not None} | {"limit": 10},
+            )
 
         yield SSEEvent(
             event=SSEEventType.TOOL_RESULT,
@@ -314,7 +357,15 @@ class GeminiAgent:
         )
         await asyncio.sleep(0.1)
 
-        all_events = await self.event_service.get_events()
+        event_filter = EventFilter(
+            district=None if parsed_criteria.target_district == "台北市全區" else parsed_criteria.target_district,
+            start_date=parsed_criteria.requested_date,
+            end_date=parsed_criteria.requested_date_end,
+            start_time=parsed_criteria.requested_start_time,
+            end_time=parsed_criteria.requested_end_time,
+            limit=100,
+        )
+        all_events = await self.event_service.get_events(event_filter)
         all_venues = await self.crowd_service.get_all_venues()
         venues_map = {v.venue_id: v for v in all_venues}
         microclimate = await self.weather_service.get_microclimate(user_lat, user_lng)
@@ -368,9 +419,15 @@ class GeminiAgent:
                 f"已為您優先規劃具備**全室內空調**與**騎樓/捷運地下街直通**的高遮蔭避暑動線！\n\n"
             )
 
+        date_summary = (
+            f"📅 **指定行程日期**：**{parsed_criteria.date_time_range}**，已只評估當天可參加且時段有交集的活動。\n\n"
+            if parsed_criteria.requested_date
+            else ""
+        )
         markdown_sections.append(
             f"### 🧭 SideQuest 智慧活動與人流決策報告\n\n"
             f"> 💬 **決策摘要**：{delta_summary}\n\n"
+            f"{date_summary}"
             f"{env_desc}"
         )
 
@@ -383,9 +440,13 @@ class GeminiAgent:
                 f"> 目前人潮指數僅 **{hidden_gem_card.crowd_score}/100**（舒適免排隊），同樣具備優質活動內容與冷氣環境，並可透過 **{hidden_gem_card.event.location.mrt_station}** 直通，避開烈日曝曬。\n\n"
             )
 
-        markdown_sections.append(
-            f"### 🎯 為您精選 3 個最佳活動建議：\n\n"
-        )
+        if not top_3_cards:
+            markdown_sections.append(
+                "### 🔎 目前沒有符合指定日期與時段的活動\n\n"
+                "可以試著放寬時間、改成整天，或告訴我另一個日期，我會保留約會／活動偏好重新搜尋。\n\n"
+            )
+        else:
+            markdown_sections.append(f"### 🎯 為您精選 3 個最佳活動建議：\n\n")
 
         for card in top_3_cards:
             badge_texts = " ".join([f"`{b.label}`" for b in card.badges])
@@ -419,6 +480,7 @@ class GeminiAgent:
             data={
                 "cards": [c.model_dump() for c in top_3_cards],
                 "dispersal_summary": "已依即時天氣與目前可用的人流資料完成分流排序。",
+                "evaluated_count": len(all_events),
             },
         )
         await asyncio.sleep(0.05)

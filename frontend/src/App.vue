@@ -10,7 +10,8 @@ import { crowdService } from './services/crowdService'
 import { routesService } from './services/routesService'
 import { userService } from './services/userService'
 
-const MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY
+const MAPS_API_KEY =
+  import.meta.env.VITE_GOOGLE_MAPS_API_KEY || 'AIzaSyBvHetpB7ilLcNSJXeecfVgaLQ7b3TGobY'
 const TAIPEI_CENTER = { lat: 25.0478, lng: 121.5170 }
 const mapElement = ref(null)
 const sheetElement = ref(null)
@@ -66,6 +67,8 @@ const aiParsedCriteria = ref(null)
 const aiRecommendations = ref([])
 const aiDispersalSummary = ref('')
 const aiOneSentenceSummary = ref('')
+const aiEvaluatedCount = ref(0)
+const agentSessionId = ref(null)
 const showThoughtTrace = ref(false)
 const feedbackMap = ref(new Map())
 
@@ -74,6 +77,7 @@ const activeRoute = ref(null)
 const routeLoading = ref(false)
 let currentPolyline = null
 const currentRoutePolylines = []
+let routeRequestVersion = 0
 let userLocationOverlay = null
 
 // Heatmap State (PRD 8)
@@ -83,9 +87,9 @@ const heatmapIsMock = ref(true)
 
 // Quick Prompts State (PRD 7.2)
 const quickPrompts = ref([
-  '今天下午想看展，不想太熱',
+  '8月22日下午想和另一半約會，看展再喝咖啡',
+  '明天晚上想找適合約會的活動，不要太擠',
   '想找人少安靜的地方散步喝咖啡',
-  '今晚信義區有什麼推薦活動？',
 ])
 const quickTags = ref([])
 
@@ -346,6 +350,7 @@ function selectPlace(place) {
 }
 
 async function openPlaceDetails(place) {
+  resetRouteState()
   detailPlaceId.value = place.id
   sheetExpanded.value = false
   sheetMinimized.value = false
@@ -355,6 +360,7 @@ async function openPlaceDetails(place) {
 }
 
 async function closePlaceDetails() {
+  resetRouteState()
   detailPlaceId.value = ''
   await nextTick()
   sheetElement.value?.scrollTo({ top: 0, behavior: 'smooth' })
@@ -408,9 +414,10 @@ function routeStepInstruction(step) {
     : '依 Google Maps 路線前進'
 }
 
-async function renderGoogleDirections(origin, destination) {
+async function renderGoogleDirections(origin, destination, isCurrentRequest = () => true) {
   const { Route } = await window.google.maps.importLibrary('routes')
   const { LatLngBounds } = await window.google.maps.importLibrary('core')
+  if (!isCurrentRequest()) return null
   const { routes } = await Route.computeRoutes({
     origin,
     destination,
@@ -421,6 +428,7 @@ async function renderGoogleDirections(origin, destination) {
     region: 'TW',
     fields: ['path', 'legs', 'localizedValues'],
   })
+  if (!isCurrentRequest()) return null
 
   const route = routes?.[0]
   const leg = route?.legs?.[0]
@@ -461,15 +469,19 @@ async function planRouteToPlace(place) {
     Snackbar.warning('這筆活動沒有可信座標，無法規劃路線')
     return
   }
-  if (!hasUserLocation.value) {
-    const located = await requestCurrentLocation({ center: false, showFeedback: true })
-    if (!located) {
-      Snackbar.warning('未取得目前位置，因此沒有產生可能錯誤的起點路線')
-      return
-    }
-  }
+  const requestVersion = ++routeRequestVersion
+  const isCurrentRouteRequest = () => requestVersion === routeRequestVersion
   routeLoading.value = true
   try {
+    if (!hasUserLocation.value) {
+      const located = await requestCurrentLocation({ center: false, showFeedback: true })
+      if (!isCurrentRouteRequest()) return
+      if (!located) {
+        Snackbar.warning('未取得目前位置，因此沒有產生可能錯誤的起點路線')
+        return
+      }
+    }
+
     const route = await routesService.computeRoute({
       originLat: userLocation.value.lat,
       originLng: userLocation.value.lng,
@@ -478,15 +490,17 @@ async function planRouteToPlace(place) {
       destName: place.name,
       prioritizeShade: true,
     })
+    if (!isCurrentRouteRequest()) return
 
     let googleRoute = null
     if (map.value && window.google?.maps?.importLibrary) {
       try {
-        googleRoute = await renderGoogleDirections(userLocation.value, place.position)
+        googleRoute = await renderGoogleDirections(userLocation.value, place.position, isCurrentRouteRequest)
       } catch (directionsError) {
         console.warn('Google Directions route failed:', directionsError)
       }
     }
+    if (!isCurrentRouteRequest()) return
 
     if (!googleRoute && route.hasRealPath && map.value && window.google?.maps) {
       clearMapRouteLayers()
@@ -521,18 +535,25 @@ async function planRouteToPlace(place) {
 
     Snackbar.success(`已取得實際路線：${activeRoute.value.transitSummary}`)
   } catch (err) {
+    if (!isCurrentRouteRequest()) return
     console.error('Route plan error:', err)
     activeRoute.value = null
     clearMapRouteLayers()
     Snackbar.error('路線規劃失敗，未顯示模擬路線')
   } finally {
-    routeLoading.value = false
+    if (isCurrentRouteRequest()) routeLoading.value = false
   }
 }
 
-function clearRoute() {
+function resetRouteState() {
+  routeRequestVersion += 1
+  routeLoading.value = false
   activeRoute.value = null
   clearMapRouteLayers()
+}
+
+function clearRoute() {
+  resetRouteState()
   centerMap()
   Snackbar.info('已清除路線')
 }
@@ -670,6 +691,7 @@ async function explore() {
   aiThoughtSteps.value = []
   aiParsedCriteria.value = null
   aiRecommendations.value = []
+  aiEvaluatedCount.value = 0
   syncMarkerSelection()
   aiDispersalSummary.value = ''
   aiOneSentenceSummary.value = ''
@@ -680,6 +702,7 @@ async function explore() {
       user_id: activePersona.value.id,
       user_latitude: userLocation.value.lat,
       user_longitude: userLocation.value.lng,
+      session_id: agentSessionId.value,
       events: places.value,
       onStreamEvent: (type, data) => {
         if (type === 'thought') {
@@ -691,9 +714,11 @@ async function explore() {
         } else if (type === 'recommendation_cards') {
           aiRecommendations.value = data.cards || []
           aiDispersalSummary.value = data.dispersal_summary || ''
+          aiEvaluatedCount.value = data.evaluated_count || 0
           syncMarkerSelection()
         } else if (type === 'done') {
           aiOneSentenceSummary.value = data.one_sentence_summary || ''
+          agentSessionId.value = data.session_id || agentSessionId.value
         }
       },
     })
@@ -713,6 +738,9 @@ async function explore() {
     }
     if (result.dispersal_summary && !aiDispersalSummary.value) {
       aiDispersalSummary.value = result.dispersal_summary
+    }
+    if (result.evaluated_count) {
+      aiEvaluatedCount.value = result.evaluated_count
     }
 
     activeFilter.value = '為你推薦'
@@ -736,6 +764,13 @@ async function explore() {
   } finally {
     isExploring.value = false
   }
+}
+
+function formatAgentEventDate(event) {
+  if (!event?.start_time) return ''
+  const start = new Date(event.start_time)
+  if (Number.isNaN(start.getTime())) return ''
+  return start.toLocaleString('zh-TW', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
 
 // PRD Section 6 Stage 10 Feedback
@@ -1204,6 +1239,8 @@ onMounted(async () => {
           <!-- Structured Understanding Criteria (PRD 7.3) -->
           <div v-if="aiParsedCriteria" class="parsed-criteria-row">
             <span class="criteria-badge">時段：{{ aiParsedCriteria.date_time_range || '今日' }}</span>
+            <span v-if="aiParsedCriteria.requested_date" class="criteria-badge criteria-date-badge">📅 已鎖定 {{ aiParsedCriteria.requested_date }}</span>
+            <span v-if="aiParsedCriteria.occasion" class="criteria-badge">💛 {{ aiParsedCriteria.occasion }}</span>
             <span v-if="aiParsedCriteria.target_district" class="criteria-badge">區域：{{ aiParsedCriteria.target_district }}</span>
             <span v-if="aiParsedCriteria.avoid_crowd" class="criteria-badge">🍃 避開人潮優先</span>
             <span v-if="aiParsedCriteria.prefer_indoor" class="criteria-badge">❄ 室內避暑</span>
@@ -1244,7 +1281,7 @@ onMounted(async () => {
               <span class="rec-kicker">PRD 3-TIER RECOMMENDATIONS</span>
               <h2>城市決策提案</h2>
             </div>
-            <strong>共評估 {{ places.length }} 個活動</strong>
+            <strong>共評估 {{ aiEvaluatedCount || places.length }} 個符合日期的活動</strong>
           </div>
 
           <div class="recommendations-grid">
@@ -1264,6 +1301,7 @@ onMounted(async () => {
               </div>
 
               <h3 class="rec-card-title">{{ card.event?.title }}</h3>
+              <div v-if="formatAgentEventDate(card.event)" class="rec-card-date">📅 {{ formatAgentEventDate(card.event) }}</div>
               <p class="rec-card-reason">{{ card.recommendation_reason }}</p>
 
               <!-- Dispersal Badges -->
