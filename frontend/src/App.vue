@@ -74,6 +74,7 @@ const activeRoute = ref(null)
 const routeLoading = ref(false)
 let currentPolyline = null
 const currentRoutePolylines = []
+let routeRequestVersion = 0
 let userLocationOverlay = null
 
 // Heatmap State (PRD 8)
@@ -346,6 +347,7 @@ function selectPlace(place) {
 }
 
 async function openPlaceDetails(place) {
+  resetRouteState()
   detailPlaceId.value = place.id
   sheetExpanded.value = false
   sheetMinimized.value = false
@@ -355,6 +357,7 @@ async function openPlaceDetails(place) {
 }
 
 async function closePlaceDetails() {
+  resetRouteState()
   detailPlaceId.value = ''
   await nextTick()
   sheetElement.value?.scrollTo({ top: 0, behavior: 'smooth' })
@@ -408,9 +411,10 @@ function routeStepInstruction(step) {
     : '依 Google Maps 路線前進'
 }
 
-async function renderGoogleDirections(origin, destination) {
+async function renderGoogleDirections(origin, destination, isCurrentRequest = () => true) {
   const { Route } = await window.google.maps.importLibrary('routes')
   const { LatLngBounds } = await window.google.maps.importLibrary('core')
+  if (!isCurrentRequest()) return null
   const { routes } = await Route.computeRoutes({
     origin,
     destination,
@@ -421,6 +425,7 @@ async function renderGoogleDirections(origin, destination) {
     region: 'TW',
     fields: ['path', 'legs', 'localizedValues'],
   })
+  if (!isCurrentRequest()) return null
 
   const route = routes?.[0]
   const leg = route?.legs?.[0]
@@ -461,15 +466,19 @@ async function planRouteToPlace(place) {
     Snackbar.warning('這筆活動沒有可信座標，無法規劃路線')
     return
   }
-  if (!hasUserLocation.value) {
-    const located = await requestCurrentLocation({ center: false, showFeedback: true })
-    if (!located) {
-      Snackbar.warning('未取得目前位置，因此沒有產生可能錯誤的起點路線')
-      return
-    }
-  }
+  const requestVersion = ++routeRequestVersion
+  const isCurrentRouteRequest = () => requestVersion === routeRequestVersion
   routeLoading.value = true
   try {
+    if (!hasUserLocation.value) {
+      const located = await requestCurrentLocation({ center: false, showFeedback: true })
+      if (!isCurrentRouteRequest()) return
+      if (!located) {
+        Snackbar.warning('未取得目前位置，因此沒有產生可能錯誤的起點路線')
+        return
+      }
+    }
+
     const route = await routesService.computeRoute({
       originLat: userLocation.value.lat,
       originLng: userLocation.value.lng,
@@ -478,15 +487,17 @@ async function planRouteToPlace(place) {
       destName: place.name,
       prioritizeShade: true,
     })
+    if (!isCurrentRouteRequest()) return
 
     let googleRoute = null
     if (map.value && window.google?.maps?.importLibrary) {
       try {
-        googleRoute = await renderGoogleDirections(userLocation.value, place.position)
+        googleRoute = await renderGoogleDirections(userLocation.value, place.position, isCurrentRouteRequest)
       } catch (directionsError) {
         console.warn('Google Directions route failed:', directionsError)
       }
     }
+    if (!isCurrentRouteRequest()) return
 
     if (!googleRoute && route.hasRealPath && map.value && window.google?.maps) {
       clearMapRouteLayers()
@@ -521,18 +532,25 @@ async function planRouteToPlace(place) {
 
     Snackbar.success(`已取得實際路線：${activeRoute.value.transitSummary}`)
   } catch (err) {
+    if (!isCurrentRouteRequest()) return
     console.error('Route plan error:', err)
     activeRoute.value = null
     clearMapRouteLayers()
     Snackbar.error('路線規劃失敗，未顯示模擬路線')
   } finally {
-    routeLoading.value = false
+    if (isCurrentRouteRequest()) routeLoading.value = false
   }
 }
 
-function clearRoute() {
+function resetRouteState() {
+  routeRequestVersion += 1
+  routeLoading.value = false
   activeRoute.value = null
   clearMapRouteLayers()
+}
+
+function clearRoute() {
+  resetRouteState()
   centerMap()
   Snackbar.info('已清除路線')
 }
