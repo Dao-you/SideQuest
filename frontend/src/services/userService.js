@@ -201,7 +201,7 @@ export class UserService {
     } catch (err) {
       console.warn('Google Auth Config API failed:', err)
       return {
-        client_id: '917216410511-web-client.apps.googleusercontent.com',
+        client_id: '917216410511-1tupuplbm4bnr76j7g9r4uii8i84olru.apps.googleusercontent.com',
         enabled: true,
       }
     }

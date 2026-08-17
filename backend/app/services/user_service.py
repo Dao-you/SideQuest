@@ -373,7 +373,7 @@ class UserService(UserServiceInterface):
 
     def get_google_auth_config(self) -> GoogleAuthConfigResponse:
         """Fetch Google OAuth 2.0 Web Client configuration."""
-        client_id = settings.GOOGLE_CLIENT_ID or "917216410511-web-client.apps.googleusercontent.com"
+        client_id = settings.GOOGLE_CLIENT_ID or "917216410511-1tupuplbm4bnr76j7g9r4uii8i84olru.apps.googleusercontent.com"
         return GoogleAuthConfigResponse(
             client_id=client_id,
             enabled=True,

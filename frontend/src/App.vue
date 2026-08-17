@@ -407,6 +407,7 @@ async function initGoogleIdentityServices() {
         client_id: googleClientId.value,
         callback: handleGoogleIdTokenResponse,
         auto_select: false,
+        cancel_on_tap_outside: true,
       })
       const container = document.getElementById('g_id_signin_container')
       if (container) {
@@ -431,12 +432,17 @@ async function handleGoogleIdTokenResponse(response) {
 }
 
 async function triggerGoogleLogin() {
-  if (typeof window !== 'undefined' && window.google?.accounts?.oauth2) {
+  if (typeof window !== 'undefined' && window.google?.accounts?.oauth2 && googleClientId.value) {
     try {
       const tokenClient = window.google.accounts.oauth2.initTokenClient({
         client_id: googleClientId.value,
         scope: 'email profile openid https://www.googleapis.com/auth/calendar.events',
         callback: async (tokenResponse) => {
+          if (tokenResponse?.error) {
+            console.warn('Google OAuth token response error:', tokenResponse.error)
+            showGoogleLoginModal.value = true
+            return
+          }
           if (tokenResponse?.access_token) {
             try {
               const res = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
@@ -453,14 +459,22 @@ async function triggerGoogleLogin() {
               return
             } catch (err) {
               console.warn('Fetch Google userinfo error:', err)
+              showGoogleLoginModal.value = true
             }
           }
         },
+        error_callback: (nonOAuthError) => {
+          console.warn('Google OAuth Client Error (e.g. invalid_client or popup blocked):', nonOAuthError)
+          // Fallback seamlessly to direct Google Account authentication dialog
+          showGoogleLoginModal.value = true
+        },
       })
-      tokenClient.requestAccessToken()
+      tokenClient.requestAccessToken({ prompt: 'select_account' })
       return
     } catch (err) {
-      console.warn('Google OAuth2 popup error:', err)
+      console.warn('Google OAuth2 popup exception:', err)
+      showGoogleLoginModal.value = true
+      return
     }
   }
   showGoogleLoginModal.value = true
