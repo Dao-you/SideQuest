@@ -1,9 +1,10 @@
-"""Routes API endpoint and visual interactive testing tool."""
+"""Routes API endpoint and Google Maps interactive visual testing tool."""
 
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import HTMLResponse
 
 from app.api.deps import get_places_service_dep
+from app.config import settings
 from app.models.places import RouteComfort, RouteComputeRequest
 from app.services.interfaces import PlacesServiceInterface
 
@@ -28,189 +29,264 @@ async def compute_route(
 
 
 @router.get("/visualize", response_class=HTMLResponse)
-async def visualize_routes() -> str:
-    """Interactive visual testing tool for Google Routes API & Thermal Comfort Routing."""
-    html_content = """<!DOCTYPE html>
+async def visualize_routes(key: str = Query(default="", description="Optional Google Maps API Key")) -> str:
+    """Interactive visual testing tool supporting Google Maps JavaScript API and Leaflet fallback."""
+    initial_key = key or settings.GOOGLE_MAPS_API_KEY or ""
+    
+    html_content = f"""<!DOCTYPE html>
 <html lang="zh-TW">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>SideQuest | Google Routes & Thermal Comfort Visual Tester</title>
+  <title>SideQuest | Google Maps & Routes API Visual Tester</title>
+  
+  <!-- Leaflet Fallback Resources -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
   <style>
-    :root {
-      --bg: #0f172a;
-      --card: #1e293b;
-      --border: #334155;
+    :root {{
+      --bg: #0b0f19;
+      --card: #151d30;
+      --border: #263554;
       --text: #f8fafc;
       --text-muted: #94a3b8;
       --primary: #38bdf8;
       --accent: #10b981;
       --warning: #f59e0b;
-    }
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      --google-blue: #4285F4;
+    }}
+    * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+    body {{
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans TC", sans-serif;
       background: var(--bg);
       color: var(--text);
       display: flex;
       flex-direction: column;
       height: 100vh;
       overflow: hidden;
-    }
-    header {
+    }}
+    header {{
       background: var(--card);
       border-bottom: 1px solid var(--border);
-      padding: 12px 20px;
+      padding: 10px 18px;
       display: flex;
       align-items: center;
       justify-content: space-between;
-    }
-    header h1 {
-      font-size: 1.15rem;
+      gap: 12px;
+      z-index: 1000;
+    }}
+    .header-left {{
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }}
+    header h1 {{
+      font-size: 1.1rem;
       font-weight: 700;
       color: var(--primary);
       display: flex;
       align-items: center;
       gap: 8px;
-    }
-    .badge {
-      background: rgba(56, 189, 248, 0.15);
-      color: var(--primary);
-      border: 1px solid rgba(56, 189, 248, 0.3);
+    }}
+    .badge {{
+      background: rgba(66, 133, 244, 0.15);
+      color: #60a5fa;
+      border: 1px solid rgba(66, 133, 244, 0.35);
       padding: 3px 8px;
       border-radius: 9999px;
+      font-size: 0.72rem;
+      font-weight: 600;
+    }}
+    .header-controls {{
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }}
+    .key-input-wrapper {{
+      display: flex;
+      align-items: center;
+      background: #0b0f19;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 4px 8px;
+      gap: 6px;
+    }}
+    .key-input {{
+      background: transparent;
+      border: none;
+      color: var(--text);
+      font-size: 0.78rem;
+      width: 220px;
+      outline: none;
+    }}
+    .btn-sm {{
+      background: #2563eb;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      padding: 4px 10px;
       font-size: 0.75rem;
       font-weight: 600;
-    }
-    .main-container {
+      cursor: pointer;
+    }}
+    .btn-sm:hover {{ background: #1d4ed8; }}
+    .map-toggle-btn {{
+      background: #1e293b;
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 5px 10px;
+      font-size: 0.78rem;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }}
+    .map-toggle-btn.active {{
+      border-color: var(--primary);
+      background: rgba(56, 189, 248, 0.15);
+      color: var(--primary);
+    }}
+    .main-container {{
       display: flex;
       flex: 1;
-      height: calc(100vh - 58px);
+      height: calc(100vh - 54px);
       overflow: hidden;
-    }
-    #map {
+      position: relative;
+    }}
+    #map-container {{
       flex: 1;
       height: 100%;
+      position: relative;
       background: #020617;
-    }
-    .sidebar {
+    }}
+    #google-map, #leaflet-map {{
+      width: 100%;
+      height: 100%;
+      position: absolute;
+      top: 0;
+      left: 0;
+    }}
+    .sidebar {{
       width: 440px;
       background: var(--card);
       border-left: 1px solid var(--border);
       display: flex;
       flex-direction: column;
       overflow-y: auto;
-      padding: 20px;
-      gap: 16px;
-    }
-    .card {
-      background: rgba(15, 23, 42, 0.7);
+      padding: 16px;
+      gap: 14px;
+      z-index: 10;
+    }}
+    .card {{
+      background: rgba(11, 15, 25, 0.75);
       border: 1px solid var(--border);
       border-radius: 10px;
       padding: 14px;
-    }
-    .card h3 {
-      font-size: 0.9rem;
+      backdrop-filter: blur(8px);
+    }}
+    .card h3 {{
+      font-size: 0.88rem;
       font-weight: 600;
       color: var(--text);
       margin-bottom: 10px;
       display: flex;
       align-items: center;
       gap: 6px;
-    }
-    .form-group {
-      margin-bottom: 10px;
-    }
-    label {
+    }}
+    .form-group {{ margin-bottom: 10px; }}
+    label {{
       display: block;
-      font-size: 0.75rem;
+      font-size: 0.72rem;
       color: var(--text-muted);
       margin-bottom: 4px;
       text-transform: uppercase;
       letter-spacing: 0.5px;
-    }
-    select, input {
+    }}
+    select, input[type="text"] {{
       width: 100%;
-      background: #0f172a;
+      background: #0b0f19;
       border: 1px solid var(--border);
       border-radius: 6px;
       padding: 8px 10px;
       color: var(--text);
-      font-size: 0.85rem;
+      font-size: 0.82rem;
       outline: none;
-    }
-    select:focus, input:focus {
-      border-color: var(--primary);
-    }
-    .btn {
+    }}
+    select:focus, input[type="text"]:focus {{ border-color: var(--primary); }}
+    .btn-action {{
       width: 100%;
-      background: #0284c7;
+      background: linear-gradient(135deg, #0284c7 0%, #2563eb 100%);
       color: white;
       border: none;
       border-radius: 6px;
       padding: 10px;
       font-weight: 600;
-      font-size: 0.9rem;
+      font-size: 0.88rem;
       cursor: pointer;
       display: flex;
       align-items: center;
       justify-content: center;
       gap: 8px;
-      transition: background 0.2s;
-    }
-    .btn:hover { background: #0369a1; }
-    .metrics-grid {
+      box-shadow: 0 4px 12px rgba(2, 132, 199, 0.25);
+      transition: all 0.2s;
+    }}
+    .btn-action:hover {{
+      box-shadow: 0 6px 16px rgba(2, 132, 199, 0.4);
+      transform: translateY(-1px);
+    }}
+    .metrics-grid {{
       display: grid;
       grid-template-columns: repeat(2, 1fr);
       gap: 8px;
-    }
-    .metric-box {
-      background: #0f172a;
+    }}
+    .metric-box {{
+      background: #0b0f19;
       border: 1px solid var(--border);
       border-radius: 6px;
       padding: 10px;
       text-align: center;
-    }
-    .metric-value {
+    }}
+    .metric-value {{
       font-size: 1.25rem;
       font-weight: 700;
       color: var(--primary);
       margin-top: 2px;
-    }
-    .metric-label {
-      font-size: 0.7rem;
+    }}
+    .metric-label {{
+      font-size: 0.68rem;
       color: var(--text-muted);
-    }
-    .steps-list {
+    }}
+    .steps-list {{
       display: flex;
       flex-direction: column;
       gap: 8px;
       margin-top: 6px;
-    }
-    .step-item {
+    }}
+    .step-item {{
       display: flex;
       gap: 10px;
-      background: #0f172a;
+      background: #0b0f19;
       border: 1px solid var(--border);
       border-radius: 6px;
-      padding: 8px 10px;
-      font-size: 0.82rem;
-      align-items: center;
-    }
-    .step-icon {
-      font-size: 1.1rem;
-      min-width: 24px;
+      padding: 9px 11px;
+      font-size: 0.8rem;
+      align-items: flex-start;
+    }}
+    .step-icon {{
+      font-size: 1.15rem;
+      min-width: 26px;
       text-align: center;
-    }
-    .step-content { flex: 1; }
-    .step-meta {
+      margin-top: 2px;
+    }}
+    .step-content {{ flex: 1; }}
+    .step-meta {{
       font-size: 0.7rem;
       color: var(--text-muted);
-      margin-top: 2px;
-    }
-    .shaded-tag {
+      margin-top: 3px;
+    }}
+    .shaded-tag {{
       font-size: 0.65rem;
       background: rgba(16, 185, 129, 0.15);
       color: #10b981;
@@ -218,52 +294,85 @@ async def visualize_routes() -> str:
       border-radius: 4px;
       border: 1px solid rgba(16, 185, 129, 0.3);
       display: inline-block;
-      margin-top: 3px;
-    }
-    pre {
-      background: #020617;
+      margin-top: 4px;
+      font-weight: 600;
+    }}
+    pre {{
+      background: #050811;
       border: 1px solid var(--border);
       border-radius: 6px;
       padding: 10px;
-      font-size: 0.75rem;
+      font-size: 0.72rem;
       color: #cbd5e1;
-      max-height: 160px;
+      max-height: 150px;
       overflow: auto;
-    }
+    }}
+    .map-banner {{
+      position: absolute;
+      top: 16px;
+      left: 16px;
+      background: rgba(15, 23, 42, 0.85);
+      border: 1px solid var(--border);
+      backdrop-filter: blur(8px);
+      padding: 6px 14px;
+      border-radius: 8px;
+      font-size: 0.8rem;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      z-index: 500;
+    }}
   </style>
 </head>
 <body>
   <header>
-    <h1>🗺️ SideQuest 智慧路徑與日照遮蔭可視化測試工具</h1>
-    <div style="display:flex; gap:8px;">
+    <div class="header-left">
+      <h1>🗺️ SideQuest 智慧路徑與 Google Maps 可視化工具</h1>
       <span class="badge">Google Routes API (New)</span>
-      <span class="badge">Thermal Comfort Scoring</span>
+    </div>
+    <div class="header-controls">
+      <div class="key-input-wrapper">
+        <span style="font-size:0.75rem; color:var(--text-muted);">🔑 Maps Key:</span>
+        <input type="password" id="apiKeyInput" class="key-input" placeholder="貼上 Google Maps API Key" value="{initial_key}" />
+        <button class="btn-sm" onclick="applyApiKey()">啟用 Google Map</button>
+      </div>
+      <button id="toggleMapBtn" class="map-toggle-btn active" onclick="toggleMapMode()">
+        🗺️ <span id="mapModeLabel">Google Maps 模式</span>
+      </button>
     </div>
   </header>
 
   <div class="main-container">
-    <div id="map"></div>
+    <div id="map-container">
+      <div id="google-map"></div>
+      <div id="leaflet-map" style="display: none;"></div>
+      <div id="mapBanner" class="map-banner">
+        <span>📍 模式：<b id="activeMapName" style="color:var(--primary);">Google Maps JavaScript API (向量地圖 + Transit 圖層)</b></span>
+      </div>
+    </div>
+
     <div class="sidebar">
       <div class="card">
-        <h3>📍 測試路徑預設場景 (Presets)</h3>
+        <h3>📍 路線測試場景 (Route Presets)</h3>
         <div class="form-group">
-          <label>快速選擇經典探索路徑</label>
+          <label>快速載入台北藝文與避暑活動場景</label>
           <select id="presetSelect" onchange="loadPreset()">
-            <option value="p1">1. 華山1914 ➡️ 瓶蓋工廠台北製造所 (南港捷運地下連通)</option>
+            <option value="p1">1. 華山1914 ➡️ 瓶蓋工廠台北製造所 (南港捷運地下街連通)</option>
             <option value="p2">2. 台北車站 ➡️ C-LAB 臺灣當代文化實驗場 (大安藝文避暑)</option>
-            <option value="p3">3. 市政府站 ➡️ 松山文創園區 (林蔭步道)</option>
-            <option value="p4">4. 圓山花博 ➡️ 中山赤峰街文創聚落 (捷運紅線)</option>
+            <option value="p3">3. 市政府站 (BL18) ➡️ 松山文創園區 (林蔭遮蔽步道)</option>
+            <option value="p4">4. 圓山花博爭豔館 ➡️ 中山赤峰街文創聚落 (捷運紅線直達)</option>
+            <option value="p5">5. 西門紅樓 ➡️ 臺北流行音樂中心 TMC (板南線直通)</option>
           </select>
         </div>
 
         <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 8px;">
           <div>
             <label>出發地 (Origin)</label>
-            <input type="text" id="originName" value="華山1914文化創意產業園區" readonly />
+            <input type="text" id="originName" value="華山1914文創園區" />
           </div>
           <div>
             <label>目的地 (Destination)</label>
-            <input type="text" id="destName" value="POPOP Taipei 瓶蓋工廠" readonly />
+            <input type="text" id="destName" value="POPOP Taipei 瓶蓋工廠" />
           </div>
         </div>
 
@@ -274,13 +383,13 @@ async def visualize_routes() -> str:
           </label>
         </div>
 
-        <button class="btn" style="margin-top: 12px;" onclick="calculateRoute()">
+        <button class="btn-action" style="margin-top: 12px;" onclick="calculateRoute()">
           ⚡ 計算 Google Routes & 熱舒適評估
         </button>
       </div>
 
       <div class="card">
-        <h3>📊 熱舒適與路徑指標 (Metrics)</h3>
+        <h3>📊 熱舒適與人流指標 (Metrics)</h3>
         <div class="metrics-grid">
           <div class="metric-box">
             <div class="metric-label">預估交通時間</div>
@@ -292,101 +401,263 @@ async def visualize_routes() -> str:
           </div>
           <div class="metric-box">
             <div class="metric-label">熱舒適評分</div>
-            <div class="metric-value" id="valScore" style="color:#f59e0b;">-- / 100</div>
+            <div class="metric-value" id="valScore" style="color:var(--warning);">-- / 100</div>
           </div>
           <div class="metric-box">
             <div class="metric-label">總移動距離</div>
             <div class="metric-value" id="valDist">-- 公尺</div>
           </div>
         </div>
-        <div id="routeAdvice" style="font-size:0.8rem; color:var(--text-muted); margin-top:10px; line-height:1.4;">
+        <div id="routeAdvice" style="font-size:0.8rem; color:var(--text-muted); margin-top:10px; line-height:1.45;">
           請點選計算以取得即時建議。
         </div>
       </div>
 
       <div class="card">
-        <h3>🚶 分段導航與遮蔭細節 (Step by Step)</h3>
+        <h3>🚶 分段導航細節 (Step-by-Step Directions)</h3>
         <div id="stepsList" class="steps-list">
           <div style="font-size:0.8rem; color:var(--text-muted); text-align:center; padding:10px;">尚未計算路徑</div>
         </div>
       </div>
 
       <div class="card">
-        <h3>🔍 API 原始 JSON 檢視 (Raw JSON)</h3>
-        <pre id="jsonViewer">// 點擊計算後將顯示完整的 RouteComfort 回傳結構</pre>
+        <h3>🔍 API 原始 JSON 結構 (Raw JSON)</h3>
+        <pre id="jsonViewer">// 點擊計算後將顯示 RouteComfort 完整回傳結構</pre>
       </div>
     </div>
   </div>
 
   <script>
-    const presets = {
-      p1: {
+    const presets = {{
+      p1: {{
         originName: "華山1914文創園區",
         originLat: 25.0441, originLng: 121.5294,
         destName: "POPOP Taipei 瓶蓋工廠",
         destLat: 25.0528, destLng: 121.6067
-      },
-      p2: {
+      }},
+      p2: {{
         originName: "台北車站",
         originLat: 25.0478, originLng: 121.5170,
         destName: "C-LAB 臺灣當代文化實驗場",
         destLat: 25.0402, destLng: 121.5392
-      },
-      p3: {
+      }},
+      p3: {{
         originName: "市政府站 (BL18)",
         originLat: 25.0411, originLng: 121.5652,
         destName: "松山文創園區",
         destLat: 25.0438, destLng: 121.5606
-      },
-      p4: {
+      }},
+      p4: {{
         originName: "圓山花博爭豔館",
         originLat: 25.0713, originLng: 121.5201,
         destName: "中山赤峰街文創聚落",
         destLat: 25.0552, destLng: 121.5192
-      }
-    };
+      }},
+      p5: {{
+        originName: "西門紅樓",
+        originLat: 25.0423, originLng: 121.5068,
+        destName: "臺北流行音樂中心 TMC",
+        destLat: 25.0519, destLng: 121.5982
+      }}
+    }};
 
-    let map = L.map('map').setView([25.0478, 121.5450], 13);
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-      attribution: '&copy; OpenStreetMap contributors &copy; CARTO'
-    }).addTo(map);
+    let currentOrigin = {{ lat: 25.0441, lng: 121.5294, name: "華山1914文創園區" }};
+    let currentDest = {{ lat: 25.0528, lng: 121.6067, name: "POPOP Taipei 瓶蓋工廠" }};
+    let activeMapMode = 'google'; // 'google' | 'leaflet'
 
-    let originMarker = null;
-    let destMarker = null;
-    let routePolyline = null;
-    let currentOrigin = { lat: 25.0441, lng: 121.5294, name: "華山1914文創園區" };
-    let currentDest = { lat: 25.0528, lng: 121.6067, name: "POPOP Taipei 瓶蓋工廠" };
+    // Google Maps Instances
+    let gMap = null;
+    let gOriginMarker = null;
+    let gDestMarker = null;
+    let gPolyline = null;
+    let gTransitLayer = null;
 
-    function loadPreset() {
+    // Leaflet Instances
+    let lMap = null;
+    let lOriginMarker = null;
+    let lDestMarker = null;
+    let lPolyline = null;
+
+    // Retrieve saved Google API key
+    const savedKey = localStorage.getItem('sidequest_gmap_key') || document.getElementById('apiKeyInput').value;
+    if (savedKey) {{
+      document.getElementById('apiKeyInput').value = savedKey;
+    }}
+
+    function initLeafletMap() {{
+      if (lMap) return;
+      lMap = L.map('leaflet-map').setView([25.0478, 121.5450], 13);
+      L.tileLayer('https://{{s}}.basemaps.cartocdn.com/dark_all/{{z}}/{{x}}/{{y}}{{r}}.png', {{
+        attribution: '&copy; OpenStreetMap contributors &copy; CARTO'
+      }}).addTo(lMap);
+      
+      lMap.on('click', function(e) {{
+        currentDest = {{ lat: e.latlng.lat, lng: e.latlng.lng, name: "自訂地圖目標點" }};
+        document.getElementById('destName').value = currentDest.name;
+        updateMapMarkers();
+        calculateRoute();
+      }});
+    }}
+
+    function loadGoogleMapsScript(apiKey) {{
+      return new Promise((resolve, reject) => {{
+        if (window.google && window.google.maps) {{
+          resolve();
+          return;
+        }}
+        const script = document.createElement('script');
+        script.src = `https://maps.googleapis.com/maps/api/js?key=${{apiKey}}&libraries=places,geometry&callback=onGoogleMapsLoaded`;
+        script.async = true;
+        script.defer = true;
+        window.onGoogleMapsLoaded = () => resolve();
+        script.onerror = () => reject(new Error('Google Maps JS script load failed'));
+        document.head.appendChild(script);
+      }});
+    }}
+
+    async function initGoogleMap() {{
+      const apiKey = document.getElementById('apiKeyInput').value.trim();
+      if (!apiKey) {{
+        console.warn("No Google Maps API Key provided, defaulting to Leaflet Dark Mode.");
+        switchToLeaflet();
+        return;
+      }}
+
+      try {{
+        await loadGoogleMapsScript(apiKey);
+        const mapDiv = document.getElementById('google-map');
+        gMap = new google.maps.Map(mapDiv, {{
+          center: {{ lat: 25.0478, lng: 121.5450 }},
+          zoom: 13,
+          styles: [
+            {{ elementType: "geometry", stylers: [{{ color: "#17263c" }}] }},
+            {{ elementType: "labels.text.stroke", stylers: [{{ color: "#242f3e" }}] }},
+            {{ elementType: "labels.text.fill", stylers: [{{ color: "#746855" }}] }},
+            {{ featureType: "road", elementType: "geometry", stylers: [{{ color: "#38414e" }}] }},
+            {{ featureType: "road", elementType: "geometry.stroke", stylers: [{{ color: "#212a37" }}] }},
+            {{ featureType: "road", elementType: "labels.text.fill", stylers: [{{ color: "#9ca5b3" }}] }},
+            {{ featureType: "water", elementType: "geometry", stylers: [{{ color: "#17263c" }}] }}
+          ],
+          mapTypeControl: true,
+          streetViewControl: true,
+          fullscreenControl: true,
+        }});
+
+        // Add Google Transit Layer (Subways and Transit)
+        gTransitLayer = new google.maps.TransitLayer();
+        gTransitLayer.setMap(gMap);
+
+        // Click listener on Google Map
+        gMap.addListener('click', (e) => {{
+          currentDest = {{ lat: e.latLng.lat(), lng: e.latLng.lng(), name: "自訂地圖目標點" }};
+          document.getElementById('destName').value = currentDest.name;
+          updateMapMarkers();
+          calculateRoute();
+        }});
+
+        updateMapMarkers();
+      }} catch (err) {{
+        console.error("Failed to initialize Google Maps JS API:", err);
+        switchToLeaflet();
+      }}
+    }}
+
+    function applyApiKey() {{
+      const key = document.getElementById('apiKeyInput').value.trim();
+      if (key) {{
+        localStorage.setItem('sidequest_gmap_key', key);
+        activeMapMode = 'google';
+        document.getElementById('google-map').style.display = 'block';
+        document.getElementById('leaflet-map').style.display = 'none';
+        document.getElementById('activeMapName').textContent = "Google Maps JavaScript API (向量地圖 + Transit 圖層)";
+        initGoogleMap().then(() => {{
+          calculateRoute();
+        }});
+      }}
+    }}
+
+    function toggleMapMode() {{
+      if (activeMapMode === 'google') {{
+        switchToLeaflet();
+      }} else {{
+        activeMapMode = 'google';
+        document.getElementById('google-map').style.display = 'block';
+        document.getElementById('leaflet-map').style.display = 'none';
+        document.getElementById('mapModeLabel').textContent = "Google Maps 模式";
+        document.getElementById('activeMapName').textContent = "Google Maps JavaScript API (向量地圖 + Transit 圖層)";
+        initGoogleMap();
+      }}
+    }}
+
+    function switchToLeaflet() {{
+      activeMapMode = 'leaflet';
+      document.getElementById('google-map').style.display = 'none';
+      document.getElementById('leaflet-map').style.display = 'block';
+      document.getElementById('mapModeLabel').textContent = "OpenStreetMap 模式";
+      document.getElementById('activeMapName').textContent = "Leaflet Dark Map (高對比開源圖層)";
+      initLeafletMap();
+      updateMapMarkers();
+      if (lMap) setTimeout(() => lMap.invalidateSize(), 200);
+    }}
+
+    function loadPreset() {{
       const pKey = document.getElementById('presetSelect').value;
       const p = presets[pKey];
-      currentOrigin = { lat: p.originLat, lng: p.originLng, name: p.originName };
-      currentDest = { lat: p.destLat, lng: p.destLng, name: p.destName };
+      currentOrigin = {{ lat: p.originLat, lng: p.originLng, name: p.originName }};
+      currentDest = {{ lat: p.destLat, lng: p.destLng, name: p.destName }};
       document.getElementById('originName').value = p.originName;
       document.getElementById('destName').value = p.destName;
-      updateMarkers();
+      updateMapMarkers();
       calculateRoute();
-    }
+    }}
 
-    function updateMarkers() {
-      if (originMarker) map.removeLayer(originMarker);
-      if (destMarker) map.removeLayer(destMarker);
+    function updateMapMarkers() {{
+      // Update Google Map Markers
+      if (activeMapMode === 'google' && gMap) {{
+        if (gOriginMarker) gOriginMarker.setMap(null);
+        if (gDestMarker) gDestMarker.setMap(null);
 
-      originMarker = L.circleMarker([currentOrigin.lat, currentOrigin.lng], {
-        radius: 9, fillColor: "#38bdf8", color: "#ffffff", weight: 2, fillOpacity: 0.9
-      }).addTo(map).bindPopup("<b>出發地:</b> " + currentOrigin.name);
+        gOriginMarker = new google.maps.Marker({{
+          position: {{ lat: currentOrigin.lat, lng: currentOrigin.lng }},
+          map: gMap,
+          title: "出發地: " + currentOrigin.name,
+          label: "A",
+        }});
 
-      destMarker = L.circleMarker([currentDest.lat, currentDest.lng], {
-        radius: 9, fillColor: "#10b981", color: "#ffffff", weight: 2, fillOpacity: 0.9
-      }).addTo(map).bindPopup("<b>目的地:</b> " + currentDest.name);
+        gDestMarker = new google.maps.Marker({{
+          position: {{ lat: currentDest.lat, lng: currentDest.lng }},
+          map: gMap,
+          title: "目的地: " + currentDest.name,
+          label: "B",
+        }});
 
-      const group = new L.featureGroup([originMarker, destMarker]);
-      map.fitBounds(group.getBounds().pad(0.3));
-    }
+        const bounds = new google.maps.LatLngBounds();
+        bounds.extend({{ lat: currentOrigin.lat, lng: currentOrigin.lng }});
+        bounds.extend({{ lat: currentDest.lat, lng: currentDest.lng }});
+        gMap.fitBounds(bounds);
+      }}
 
-    async function calculateRoute() {
+      // Update Leaflet Map Markers
+      if (activeMapMode === 'leaflet' && lMap) {{
+        if (lOriginMarker) lMap.removeLayer(lOriginMarker);
+        if (lDestMarker) lMap.removeLayer(lDestMarker);
+
+        lOriginMarker = L.circleMarker([currentOrigin.lat, currentOrigin.lng], {{
+          radius: 9, fillColor: "#38bdf8", color: "#ffffff", weight: 2, fillOpacity: 0.9
+        }}).addTo(lMap).bindPopup("<b>出發地:</b> " + currentOrigin.name);
+
+        lDestMarker = L.circleMarker([currentDest.lat, currentDest.lng], {{
+          radius: 9, fillColor: "#10b981", color: "#ffffff", weight: 2, fillOpacity: 0.9
+        }}).addTo(lMap).bindPopup("<b>目的地:</b> " + currentDest.name);
+
+        const group = new L.featureGroup([lOriginMarker, lDestMarker]);
+        lMap.fitBounds(group.getBounds().pad(0.3));
+      }}
+    }}
+
+    async function calculateRoute() {{
       const prioritizeShade = document.getElementById('prioritizeShade').checked;
-      const payload = {
+      const payload = {{
         origin_lat: currentOrigin.lat,
         origin_lng: currentOrigin.lng,
         destination_lat: currentDest.lat,
@@ -394,22 +665,22 @@ async def visualize_routes() -> str:
         destination_name: currentDest.name,
         prioritize_shade: prioritizeShade,
         travel_mode: "TRANSIT"
-      };
+      }};
 
-      try {
-        const res = await fetch('/api/v1/routes/compute', {
+      try {{
+        const res = await fetch('/api/v1/routes/compute', {{
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {{ 'Content-Type': 'application/json' }},
           body: JSON.stringify(payload)
-        });
+        }});
         const data = await res.json();
         renderResult(data);
-      } catch (err) {
+      }} catch (err) {{
         console.error("Route calculation error:", err);
-      }
-    }
+      }}
+    }}
 
-    function renderResult(data) {
+    function renderResult(data) {{
       document.getElementById('valDuration').textContent = data.total_duration_minutes + " 分鐘";
       document.getElementById('valShade').textContent = data.underground_or_shaded_percentage + " %";
       document.getElementById('valScore').textContent = data.comfort_score + " 分";
@@ -420,8 +691,8 @@ async def visualize_routes() -> str:
       const stepsContainer = document.getElementById('stepsList');
       stepsContainer.innerHTML = '';
 
-      if (data.segments && data.segments.length > 0) {
-        data.segments.forEach((s, idx) => {
+      if (data.segments && data.segments.length > 0) {{
+        data.segments.forEach((s, idx) => {{
           let icon = '🚶';
           if (s.mode === 'SUBWAY') icon = '🚇';
           if (s.mode === 'BUS') icon = '🚌';
@@ -430,35 +701,69 @@ async def visualize_routes() -> str:
           const item = document.createElement('div');
           item.className = 'step-item';
           item.innerHTML = `
-            <div class="step-icon">${icon}</div>
+            <div class="step-icon">${{icon}}</div>
             <div class="step-content">
-              <div><b>Step ${idx + 1}:</b> ${s.instruction}</div>
-              <div class="step-meta">時間: ${s.duration_minutes} 分鐘 | 距離: ${s.distance_meters} 公尺</div>
-              ${s.is_shaded_or_underground ? '<span class="shaded-tag">🛡️ 地下/遮蔭防曬路徑</span>' : ''}
+              <div><b>Step ${{idx + 1}}:</b> ${{s.instruction}}</div>
+              <div class="step-meta">時間: ${{s.duration_minutes}} 分鐘 | 距離: ${{s.distance_meters}} 公尺</div>
+              ${{s.is_shaded_or_underground ? '<span class="shaded-tag">🛡️ 地下/遮蔭防曬路徑</span>' : ''}}
             </div>
           `;
           stepsContainer.appendChild(item);
-        });
-      }
+        }});
+      }}
 
-      // Draw route on map
-      if (routePolyline) map.removeLayer(routePolyline);
-      const latlngs = [
-        [currentOrigin.lat, currentOrigin.lng],
-        [(currentOrigin.lat + currentDest.lat)/2 + 0.002, (currentOrigin.lng + currentDest.lng)/2],
-        [currentDest.lat, currentDest.lng]
-      ];
-      routePolyline = L.polyline(latlngs, {
-        color: '#38bdf8',
-        weight: 5,
-        opacity: 0.8,
-        dashArray: '8, 8'
-      }).addTo(map);
-    }
+      // Render Polyline on Google Map
+      if (activeMapMode === 'google' && gMap) {{
+        if (gPolyline) gPolyline.setMap(null);
 
-    // Initial load
-    updateMarkers();
-    calculateRoute();
+        let pathCoords = [];
+        if (data.encoded_polyline && window.google && window.google.maps.geometry) {{
+          pathCoords = google.maps.geometry.encoding.decodePath(data.encoded_polyline);
+        }} else {{
+          pathCoords = [
+            {{ lat: currentOrigin.lat, lng: currentOrigin.lng }},
+            {{ lat: (currentOrigin.lat + currentDest.lat)/2 + 0.002, lng: (currentOrigin.lng + currentDest.lng)/2 }},
+            {{ lat: currentDest.lat, lng: currentDest.lng }}
+          ];
+        }}
+
+        gPolyline = new google.maps.Polyline({{
+          path: pathCoords,
+          geodesic: true,
+          strokeColor: '#38bdf8',
+          strokeOpacity: 0.9,
+          strokeWeight: 5,
+          map: gMap,
+        }});
+      }}
+
+      // Render Polyline on Leaflet Map
+      if (activeMapMode === 'leaflet' && lMap) {{
+        if (lPolyline) lMap.removeLayer(lPolyline);
+        const latlngs = [
+          [currentOrigin.lat, currentOrigin.lng],
+          [(currentOrigin.lat + currentDest.lat)/2 + 0.002, (currentOrigin.lng + currentDest.lng)/2],
+          [currentDest.lat, currentDest.lng]
+        ];
+        lPolyline = L.polyline(latlngs, {{
+          color: '#38bdf8',
+          weight: 5,
+          opacity: 0.85,
+          dashArray: '8, 8'
+        }}).addTo(lMap);
+      }}
+    }}
+
+    // Bootstrapping
+    const initialKey = document.getElementById('apiKeyInput').value.trim();
+    if (initialKey) {{
+      initGoogleMap().then(() => {{
+        calculateRoute();
+      }});
+    }} else {{
+      switchToLeaflet();
+      calculateRoute();
+    }}
   </script>
 </body>
 </html>
