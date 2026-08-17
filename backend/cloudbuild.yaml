@@ -2,12 +2,13 @@ steps:
   # 1. Run automated tests in build container
   - name: 'python:3.12-slim'
     id: 'test'
-    entrypoint: 'bash'
+    entrypoint: 'sh'
     args:
       - '-c'
       - |
         pip install --no-cache-dir -r requirements.txt
-        pytest -v
+        pip install --no-cache-dir pytest pytest-asyncio
+        python -m pytest -v
 
   # 2. Build production Docker image
   - name: 'gcr.io/cloud-builders/docker'
@@ -15,7 +16,7 @@ steps:
     args:
       - 'build'
       - '-t'
-      - '${_LOCATION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/${_IMAGE_NAME}:${SHORT_SHA}'
+      - '${_LOCATION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/${_IMAGE_NAME}:${_TAG}'
       - '-t'
       - '${_LOCATION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/${_IMAGE_NAME}:latest'
       - '.'
@@ -37,7 +38,7 @@ steps:
       - 'deploy'
       - '${_SERVICE_NAME}'
       - '--image'
-      - '${_LOCATION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/${_IMAGE_NAME}:${SHORT_SHA}'
+      - '${_LOCATION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/${_IMAGE_NAME}:${_TAG}'
       - '--region'
       - '${_LOCATION}'
       - '--platform'
@@ -60,10 +61,11 @@ substitutions:
   _LOCATION: 'asia-east1'
   _REPO_NAME: 'sidequest'
   _IMAGE_NAME: 'backend'
-  _SERVICE_NAME: 'sidequest-backend'
+  _SERVICE_NAME: 'sidequest-backend-test'
+  _TAG: 'latest'
 
 images:
-  - '${_LOCATION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/${_IMAGE_NAME}:${SHORT_SHA}'
+  - '${_LOCATION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/${_IMAGE_NAME}:${_TAG}'
   - '${_LOCATION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/${_IMAGE_NAME}:latest'
 
 options:
