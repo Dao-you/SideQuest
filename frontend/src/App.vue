@@ -8,11 +8,12 @@ import { createAgentService } from './services/agentService'
 
 const MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY
 const mapElement = ref(null)
+const sheetElement = ref(null)
 const mapState = ref('loading')
 const mapError = ref('')
 const map = ref(null)
 const activeFilter = ref('為你推薦')
-const activePlaceId = ref('huashan')
+const activePlaceId = ref('')
 const prompt = ref('')
 const isExploring = ref(false)
 const eventsLoading = ref(true)
@@ -20,7 +21,13 @@ const eventsError = ref('')
 const aiReply = ref('')
 const aiError = ref('')
 const selectedTab = ref('discover')
+const sheetExpanded = ref(false)
+const sheetDragging = ref(false)
+const sheetDragHeight = ref(null)
 const markers = new Map()
+let mapInfoWindow = null
+let sheetDragStartY = 0
+let sheetDragStartHeight = 0
 
 const filters = ['為你推薦', '室內避暑', '低人流', '免費入場']
 const quickPrompts = ['今天下午想看展，不想太熱', '想找人少的地方散步', '今晚信義區有什麼活動？']
@@ -30,6 +37,9 @@ const eventDataSource = createEventDataSource()
 const eventSourceLabel = eventDataSource.label
 const agentService = createAgentService()
 const agentServiceLabel = agentService.label
+const sheetStyle = computed(() => sheetDragHeight.value
+  ? { '--sheet-height': `${sheetDragHeight.value}px` }
+  : undefined)
 
 async function loadEvents() {
   eventsLoading.value = true
@@ -66,16 +76,79 @@ function crowdClass(score) {
   return 'busy'
 }
 
+function syncMarkerSelection() {
+  markers.forEach((marker, id) => {
+    marker.content?.classList.toggle('is-active', id === activePlaceId.value)
+    marker.zIndex = id === activePlaceId.value ? 100 : 1
+  })
+}
+
+function buildMapInfoContent(place) {
+  const content = document.createElement('div')
+  content.className = 'map-info-card'
+
+  const eyebrow = document.createElement('span')
+  eyebrow.className = 'map-info-card__eyebrow'
+  eyebrow.textContent = `${place.label} · ${place.category}`
+
+  const title = document.createElement('strong')
+  title.textContent = place.name
+
+  const meta = document.createElement('span')
+  meta.className = 'map-info-card__meta'
+  meta.textContent = `${crowdLabel(place.crowd)}人流 · 曝曬 ${place.sun}%`
+
+  content.append(eyebrow, title, meta)
+  return content
+}
+
+function showMapInfo(place, marker) {
+  if (!map.value || !marker || !window.google?.maps) return
+  mapInfoWindow ??= new window.google.maps.InfoWindow({ disableAutoPan: true })
+  mapInfoWindow.setContent(buildMapInfoContent(place))
+  mapInfoWindow.open({ map: map.value, anchor: marker })
+}
+
 function selectPlace(place) {
   activePlaceId.value = place.id
   const marker = markers.get(place.id)
   if (marker && map.value) {
     map.value.panTo(place.position)
     map.value.setZoom(14)
-    const markerContent = marker.content
-    markerContent?.classList.add('is-active')
-    window.setTimeout(() => markerContent?.classList.remove('is-active'), 900)
+    syncMarkerSelection()
+    showMapInfo(place, marker)
   }
+}
+
+function toggleSheet() {
+  sheetExpanded.value = !sheetExpanded.value
+  sheetDragHeight.value = null
+}
+
+function startSheetDrag(event) {
+  if (event.pointerType === 'mouse' && event.button !== 0) return
+  sheetDragging.value = true
+  sheetDragStartY = event.clientY
+  sheetDragStartHeight = sheetElement.value?.getBoundingClientRect().height ?? window.innerHeight * 0.48
+  event.currentTarget.setPointerCapture?.(event.pointerId)
+}
+
+function moveSheetDrag(event) {
+  if (!sheetDragging.value) return
+  const minHeight = Math.min(560, Math.max(340, window.innerHeight * 0.46))
+  const maxHeight = Math.max(minHeight, window.innerHeight * 0.88)
+  sheetDragHeight.value = Math.min(maxHeight, Math.max(minHeight, sheetDragStartHeight + sheetDragStartY - event.clientY))
+}
+
+function endSheetDrag(event) {
+  if (!sheetDragging.value) return
+  sheetDragging.value = false
+  event.currentTarget.releasePointerCapture?.(event.pointerId)
+  const currentHeight = sheetDragHeight.value ?? sheetDragStartHeight
+  const minHeight = Math.min(560, Math.max(340, window.innerHeight * 0.46))
+  const maxHeight = Math.max(minHeight, window.innerHeight * 0.88)
+  sheetExpanded.value = currentHeight > (minHeight + maxHeight) / 2
+  sheetDragHeight.value = null
 }
 
 function useQuickPrompt(value) {
@@ -114,16 +187,27 @@ function centerMap() {
 
 async function addMarker(place, AdvancedMarkerElement) {
   const content = document.createElement('div')
-  content.className = 'map-pin'
+  content.className = 'map-place-marker'
   content.style.setProperty('--pin-color', place.color)
+
+  const pin = document.createElement('span')
+  pin.className = 'map-place-marker__pin'
+  const pinLabel = document.createElement('span')
+  pinLabel.textContent = place.label
+  pin.appendChild(pinLabel)
+
   const label = document.createElement('span')
-  label.textContent = place.label
-  content.appendChild(label)
+  label.className = 'map-place-marker__label'
+  label.textContent = place.shortName
+  content.append(pin, label)
+
   const marker = new AdvancedMarkerElement({
     map: map.value,
     position: place.position,
     title: place.name,
     content,
+    gmpClickable: true,
+    zIndex: 1,
   })
   marker.addEventListener('gmp-click', () => selectPlace(place))
   markers.set(place.id, marker)
@@ -154,6 +238,7 @@ async function initMap() {
     })
     const { AdvancedMarkerElement } = await window.google.maps.importLibrary('marker')
     await Promise.all(places.value.map((place) => addMarker(place, AdvancedMarkerElement)))
+    syncMarkerSelection()
     mapState.value = 'ready'
   } catch (error) {
     mapState.value = 'error'
@@ -170,7 +255,7 @@ onMounted(async () => {
 </script>
 
 <template>
-  <main class="app-shell">
+  <main class="app-shell" :class="{ 'sheet-expanded': sheetExpanded }">
     <section class="map-stage" aria-label="台北市地圖">
       <div ref="mapElement" class="google-map"></div>
       <div v-if="mapState === 'loading'" class="map-state map-loading">
@@ -217,8 +302,26 @@ onMounted(async () => {
       </div>
     </section>
 
-    <section class="bottom-sheet" aria-label="SideQuest 探索面板">
-      <div class="sheet-handle"></div>
+    <section
+      ref="sheetElement"
+      class="bottom-sheet"
+      :class="{ expanded: sheetExpanded, dragging: sheetDragging }"
+      :style="sheetStyle"
+      aria-label="SideQuest 探索面板"
+    >
+      <button
+        class="sheet-grabber"
+        type="button"
+        :aria-label="sheetExpanded ? '收合探索面板' : '展開探索面板'"
+        @click="toggleSheet"
+        @pointerdown="startSheetDrag"
+        @pointermove="moveSheetDrag"
+        @pointerup="endSheetDrag"
+        @pointercancel="endSheetDrag"
+      >
+        <span class="sheet-handle"></span>
+        <small>{{ sheetExpanded ? '向下收合地圖' : '向上展開探索' }}</small>
+      </button>
       <div class="sheet-header">
         <div>
           <p class="eyebrow"><span class="eyebrow-dot"></span> 你的城市 Agent</p>
