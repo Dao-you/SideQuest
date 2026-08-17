@@ -341,13 +341,24 @@ function getMapBottomInset() {
   return Math.max(0, Math.min(overlap, mapRect.height - 80))
 }
 
-function focusPlaceInVisibleMap(place, { zoom = 14, settle = true } = {}) {
+function focusPlaceInVisibleMap(place, { settle = true } = {}) {
   if (!map.value || !place?.position) return
   const applyFocus = () => {
-    map.value.panTo(place.position)
-    map.value.setZoom(zoom)
     const bottomInset = getMapBottomInset()
-    if (bottomInset > 0) map.value.panBy(0, bottomInset / 2)
+    const projection = map.value.getProjection()
+    const placePoint = projection?.fromLatLngToPoint(place.position)
+    const zoom = map.value.getZoom() ?? 14
+    if (!projection || !placePoint || !window.google?.maps?.Point) {
+      map.value.panTo(place.position)
+      return
+    }
+
+    const zoomScale = 2 ** zoom
+    const centerPoint = new window.google.maps.Point(
+      placePoint.x,
+      placePoint.y + (bottomInset / 2) / zoomScale,
+    )
+    map.value.panTo(projection.fromPointToLatLng(centerPoint))
   }
 
   window.requestAnimationFrame(applyFocus)
