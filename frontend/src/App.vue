@@ -10,8 +10,7 @@ import { crowdService } from './services/crowdService'
 import { routesService } from './services/routesService'
 import { userService } from './services/userService'
 
-const MAPS_API_KEY =
-  import.meta.env.VITE_GOOGLE_MAPS_API_KEY || 'AIzaSyBvHetpB7ilLcNSJXeecfVgaLQ7b3TGobY'
+const rawEnvMapsKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || ''
 const TAIPEI_CENTER = { lat: 25.0478, lng: 121.5170 }
 const mapElement = ref(null)
 const sheetElement = ref(null)
@@ -901,16 +900,32 @@ function addMarker(place) {
   markers.set(place.id, { content, overlay })
 }
 
+async function fetchMapsApiKey() {
+  if (rawEnvMapsKey) return rawEnvMapsKey
+  try {
+    const res = await fetch('/api/v1/config/maps-key')
+    if (res.ok) {
+      const data = await res.json()
+      if (data.maps_api_key) return data.maps_api_key
+    }
+  } catch (err) {
+    console.warn('Could not fetch dynamic maps key from backend config:', err)
+  }
+  return ''
+}
+
 async function initMap() {
-  if (!MAPS_API_KEY) {
+  mapState.value = 'loading'
+  const mapsApiKey = await fetchMapsApiKey()
+  if (!mapsApiKey) {
     mapState.value = 'error'
-    mapError.value = '尚未設定 Google Maps API key'
+    mapError.value = '尚未設定 Google Maps API key (請設定 GCP 專案環境變數)'
     return
   }
 
   try {
     const loader = new Loader({
-      apiKey: MAPS_API_KEY,
+      apiKey: mapsApiKey,
       version: 'weekly',
       libraries: ['geometry'],
     })

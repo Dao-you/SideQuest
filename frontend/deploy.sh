@@ -30,10 +30,16 @@ if ! gcloud artifacts repositories describe "${REPO_NAME}" --location="${REGION}
 fi
 
 IMAGE_URI="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPO_NAME}/${IMAGE_NAME}:latest"
-MAPS_API_KEY="${VITE_GOOGLE_MAPS_API_KEY:-AIzaSyBvHetpB7ilLcNSJXeecfVgaLQ7b3TGobY}"
+
+# Dynamically fetch Browser Key from GCP project if not provided in environment
+if [ -z "${VITE_GOOGLE_MAPS_API_KEY:-}" ]; then
+  MAPS_API_KEY=$(gcloud services api-keys get-key-string projects/917216410511/locations/global/keys/cf0642bd-628b-4876-ba5c-f1ded5ce9dad --format='value(keyString)' 2>/dev/null || echo "")
+else
+  MAPS_API_KEY="${VITE_GOOGLE_MAPS_API_KEY}"
+fi
 
 # Step 2: Build Container via Cloud Build
-echo "🏗️ Building Frontend Docker container via Cloud Build with Google Maps API key..."
+echo "🏗️ Building Frontend Docker container via Cloud Build with GCP project configuration..."
 gcloud builds submit . \
   --config=cloudbuild.yaml \
   --substitutions="_REGION=${REGION},_REPOSITORY=${REPO_NAME},_MAPS_API_KEY=${MAPS_API_KEY},_API_BASE_URL=/api/v1,_EVENT_SOURCE=api,_AGENT_SOURCE=agent" \

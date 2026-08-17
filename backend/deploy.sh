@@ -58,6 +58,9 @@ gcloud builds submit . \
   --tag="${IMAGE_URI}" \
   --project="${PROJECT_ID}"
 
+# Dynamically retrieve Maps Browser Key from GCP Project API Keys if available
+BROWSER_KEY="${GOOGLE_MAPS_API_KEY:-$(gcloud services api-keys get-key-string projects/917216410511/locations/global/keys/cf0642bd-628b-4876-ba5c-f1ded5ce9dad --format='value(keyString)' 2>/dev/null || echo '')}"
+
 # Step 4: Deploy to Cloud Run
 echo "🚀 Step 4/4: Deploying to Google Cloud Run..."
 gcloud run deploy "${SERVICE_NAME}" \
@@ -70,7 +73,7 @@ gcloud run deploy "${SERVICE_NAME}" \
   --concurrency=80 \
   --cpu=1 \
   --memory=512Mi \
-  --set-env-vars="ENVIRONMENT=production,DEBUG=false,GCP_PROJECT_ID=${PROJECT_ID}" \
+  --set-env-vars="ENVIRONMENT=production,DEBUG=false,GCP_PROJECT_ID=${PROJECT_ID},GOOGLE_MAPS_API_KEY=${BROWSER_KEY}" \
   --project="${PROJECT_ID}"
 
 SERVICE_URL=$(gcloud run services describe "${SERVICE_NAME}" --platform=managed --region="${REGION}" --project="${PROJECT_ID}" --format='value(status.url)')

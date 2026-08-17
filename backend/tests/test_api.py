@@ -146,3 +146,15 @@ async def test_agent_chat_stream(async_client: AsyncClient):
     res_stream = await async_client.post("/api/v1/agent/chat/stream", json=payload)
     assert res_stream.status_code == 200
     assert "text/event-stream" in res_stream.headers.get("content-type", "")
+
+
+@pytest.mark.asyncio
+async def test_config_endpoints(async_client: AsyncClient):
+    """Test dynamic runtime configuration endpoint."""
+    res = await async_client.get("/api/v1/config/maps-key")
+    assert res.status_code == 200
+    data = res.json()
+    assert "maps_api_key" in data
+    assert "gcp_project_id" in data
+    assert "environment" in data
+
