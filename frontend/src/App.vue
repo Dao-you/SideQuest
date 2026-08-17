@@ -95,7 +95,6 @@ const eventSourceLabel = eventDataSource.label
 const agentService = createAgentService()
 const agentServiceLabel = agentService.label
 const markers = new Map()
-let mapInfoWindow = null
 let sheetDragStartY = 0
 let sheetDragStartHeight = 0
 let mapFocusTimer = null
@@ -298,39 +297,6 @@ function syncMarkerSelection() {
   })
 }
 
-function buildMapInfoContent(place) {
-  const content = document.createElement('div')
-  content.className = 'map-info-card'
-
-  const eyebrow = document.createElement('span')
-  eyebrow.className = 'map-info-card__eyebrow'
-  eyebrow.textContent = `${place.label} · ${place.category}`
-
-  const title = document.createElement('strong')
-  title.textContent = place.name
-
-  const meta = document.createElement('span')
-  meta.className = 'map-info-card__meta'
-  meta.textContent = `${crowdLabel(place.crowd)} · ${place.distanceShort}`
-
-  const action = document.createElement('button')
-  action.className = 'map-info-card__action'
-  action.type = 'button'
-  action.textContent = '查看活動詳情 →'
-  action.addEventListener('click', () => openPlaceDetails(place))
-
-  content.append(eyebrow, title, meta, action)
-  return content
-}
-
-function showMapInfo(place, markerRecord) {
-  if (!map.value || !markerRecord || !window.google?.maps) return
-  mapInfoWindow ??= new window.google.maps.InfoWindow({ disableAutoPan: true })
-  mapInfoWindow.setContent(buildMapInfoContent(place))
-  mapInfoWindow.setPosition(place.position)
-  mapInfoWindow.open({ map: map.value, shouldFocus: false })
-}
-
 function getMapBottomInset() {
   if (!mapElement.value || !sheetElement.value) return 0
   const mapRect = mapElement.value.getBoundingClientRect()
@@ -374,11 +340,9 @@ function refocusSelectedPlace() {
 function selectPlace(place) {
   if (!place) return
   activePlaceId.value = place.id
-  const marker = markers.get(place.id)
-  if (marker && map.value && place.position) {
+  if (markers.has(place.id) && map.value && place.position) {
     focusPlaceInVisibleMap(place)
     syncMarkerSelection()
-    showMapInfo(place, marker)
   }
 }
 

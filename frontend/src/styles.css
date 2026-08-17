@@ -82,11 +82,6 @@ button { cursor: pointer; }
 .map-place-marker.is-active .map-place-marker__pin { width: 38px; height: 38px; border-width: 3px; font-size: 11px; }
 .map-place-marker.is-active .map-place-marker__label { max-width: 190px; padding-block: 9px; color: #fff; background: #355947; border-color: #355947; font-size: 11px; }
 .map-user-location { position: absolute; width: 18px; height: 18px; border: 3px solid #fff; border-radius: 50%; background: #2f7ee6; box-shadow: 0 0 0 8px rgba(47, 126, 230, .18), 0 3px 10px rgba(32, 67, 108, .36); transform: translate(-50%, -50%); }
-.map-info-card { display: grid; max-width: 225px; gap: 5px; padding: 3px 2px; color: #34483d; font-family: Inter, "Noto Sans TC", sans-serif; }
-.map-info-card__eyebrow { color: #799080; font-size: 9px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; }
-.map-info-card strong { font-size: 12px; line-height: 1.35; }
-.map-info-card__meta { color: #8b978f; font-size: 9px; }
-.map-info-card__action { justify-self: start; margin-top: 2px; padding: 5px 8px; border: 0; border-radius: 8px; color: #fff; background: #3d6250; font-size: 9px; font-weight: 700; }
 .loader-orbit { width: 32px; height: 32px; border: 3px solid rgba(89, 126, 98, .2); border-top-color: #547a65; border-radius: 50%; animation: spin 1s linear infinite; }
 .error-mark { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 50%; color: #fff; background: #d48565; font-weight: 800; }
 @keyframes spin { to { transform: rotate(360deg); } }
