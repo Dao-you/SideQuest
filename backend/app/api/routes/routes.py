@@ -11,7 +11,15 @@ from app.services.interfaces import PlacesServiceInterface
 router = APIRouter(prefix="/routes", tags=["Routes"])
 
 
-@router.post("/compute", response_model=RouteComfort)
+@router.post(
+    "/compute",
+    response_model=RouteComfort,
+    summary="計算大眾運輸與固定時段遮蔭情境",
+    description=(
+        "取得大眾運輸路線，並依驗收用固定情境 morning（09:00）、"
+        "noon（12:30）或 evening（17:30）估算步行路段遮蔭與曝曬時間。"
+    ),
+)
 async def compute_route(
     request: RouteComputeRequest,
     maps_service: PlacesServiceInterface = Depends(get_places_service_dep),
@@ -25,6 +33,7 @@ async def compute_route(
         dest_lng=request.destination_lng,
         dest_name=dest_name,
         prioritize_shade=request.prioritize_shade,
+        shade_time_period=request.shade_time_period,
     )
 
 

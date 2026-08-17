@@ -2,6 +2,7 @@
 
 from typing import Any, Dict
 from app.agent.tools.base import BaseTool
+from app.models.places import ShadeTimePeriod
 from app.services.places_service import get_places_service
 
 
@@ -42,6 +43,12 @@ class RoutesTool(BaseTool):
                 "description": "是否優先推薦地下街與遮蔭路徑",
                 "default": True,
             },
+            "shade_time_period": {
+                "type": "string",
+                "enum": ["morning", "noon", "evening"],
+                "description": "驗收用固定遮蔭時段情境",
+                "default": "morning",
+            },
         },
         "required": ["origin_lat", "origin_lng", "destination_lat", "destination_lng"],
     }
@@ -54,6 +61,7 @@ class RoutesTool(BaseTool):
         destination_lng: float,
         destination_name: str = "目的地",
         prioritize_shade: bool = True,
+        shade_time_period: str = "morning",
         **kwargs: Any,
     ) -> Dict[str, Any]:
         """Execute route calculation."""
@@ -65,6 +73,7 @@ class RoutesTool(BaseTool):
             dest_lng=destination_lng,
             dest_name=destination_name,
             prioritize_shade=prioritize_shade,
+            shade_time_period=ShadeTimePeriod(shade_time_period),
         )
         return {
             "status": "success",
@@ -75,5 +84,6 @@ class RoutesTool(BaseTool):
             "underground_or_shaded_percentage": route.underground_or_shaded_percentage,
             "comfort_score": route.comfort_score,
             "route_advice": route.route_advice,
+            "shade_time_period": route.shade_time_period.value,
             "segments": [s.model_dump() for s in route.segments],
         }

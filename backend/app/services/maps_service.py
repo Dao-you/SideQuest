@@ -6,7 +6,7 @@ import httpx
 
 from app.config import settings
 from app.logging_config import logger
-from app.models.places import PlaceDetails, RouteComfort, RouteSegment
+from app.models.places import PlaceDetails, RouteComfort, RouteSegment, ShadeTimePeriod
 from app.models.weather import MicroclimateResponse, SolarExposureResponse, UVRiskLevel, WeatherCondition
 from app.services.urban_shade_service import get_urban_shade_engine
 
@@ -173,6 +173,7 @@ class MapsService:
         dest_lng: float,
         dest_name: str = "目的地",
         prioritize_shade: bool = True,
+        shade_time_period: ShadeTimePeriod = ShadeTimePeriod.MORNING,
     ) -> RouteComfort:
         """Compute transit and shaded route with thermal comfort scoring."""
         # Try real Google Routes API if key is present
@@ -227,12 +228,13 @@ class MapsService:
                                     )
 
                             shade_engine = get_urban_shade_engine()
-                            shade_pct, sun_mins, advice, comfort = shade_engine.calculate_route_shade_metrics(
+                            shade_pct, sun_mins, advice, comfort, shaded_meters = shade_engine.calculate_route_shade_metrics(
                                 dest_name=dest_name,
                                 distance_meters=dist_m,
                                 duration_minutes=dur_min,
                                 segments=segments,
                                 prioritize_shade=prioritize_shade,
+                                shade_time_period=shade_time_period,
                             )
                             return RouteComfort(
                                 origin="目前位置",
@@ -244,7 +246,8 @@ class MapsService:
                                 comfort_score=comfort,
                                 route_advice=advice,
                                 sun_exposure_minutes=sun_mins,
-                                shaded_distance_meters=int(dist_m * (shade_pct / 100.0)),
+                                shaded_distance_meters=shaded_meters,
+                                shade_time_period=shade_time_period,
                                 segments=segments,
                                 encoded_polyline=encoded_poly,
                             )
@@ -303,12 +306,13 @@ class MapsService:
                 ),
             ]
 
-        shade_pct, sun_mins, advice, comfort = shade_engine.calculate_route_shade_metrics(
+        shade_pct, sun_mins, advice, comfort, shaded_meters = shade_engine.calculate_route_shade_metrics(
             dest_name=dest_name,
             distance_meters=distance_meters,
             duration_minutes=total_duration,
             segments=segments,
             prioritize_shade=prioritize_shade,
+            shade_time_period=shade_time_period,
         )
 
         return RouteComfort(
@@ -321,7 +325,8 @@ class MapsService:
             comfort_score=comfort,
             route_advice=advice,
             sun_exposure_minutes=sun_mins,
-            shaded_distance_meters=int(distance_meters * (shade_pct / 100.0)),
+            shaded_distance_meters=shaded_meters,
+            shade_time_period=shade_time_period,
             segments=segments,
         )
 

@@ -13,6 +13,14 @@ class TravelMode(str, Enum):
     BICYCLE = "BICYCLE"
 
 
+class ShadeTimePeriod(str, Enum):
+    """Preset demo scenarios used for deterministic shade estimates."""
+
+    MORNING = "morning"
+    NOON = "noon"
+    EVENING = "evening"
+
+
 class PlaceDetails(BaseModel):
     """Google Places API (New) details representation."""
     place_id: str
@@ -51,6 +59,10 @@ class RouteComfort(BaseModel):
     route_advice: str
     sun_exposure_minutes: float = Field(default=0.0, description="Estimated direct sun exposure duration in minutes")
     shaded_distance_meters: Optional[int] = Field(default=None, description="Total protected distance in meters")
+    shade_time_period: ShadeTimePeriod = Field(
+        default=ShadeTimePeriod.MORNING,
+        description="Hardcoded demo shade scenario: morning | noon | evening",
+    )
     segments: List[RouteSegment] = Field(default_factory=list)
     encoded_polyline: Optional[str] = Field(default=None, description="Google Polyline encoded path string")
 
@@ -64,3 +76,7 @@ class RouteComputeRequest(BaseModel):
     destination_name: Optional[str] = None
     travel_mode: TravelMode = TravelMode.TRANSIT
     prioritize_shade: bool = True
+    shade_time_period: ShadeTimePeriod = Field(
+        default=ShadeTimePeriod.MORNING,
+        description="驗收用固定遮蔭時段：morning（09:00）、noon（12:30）、evening（17:30）",
+    )
