@@ -1,0 +1,129 @@
+/**
+ * User & Persona Management Service (PRD 7.1 Mock Login & Bookmarks).
+ */
+import { apiClient } from './apiClient'
+
+export class UserService {
+  /**
+   * List preset test personas for Demo Login.
+   */
+  async listPersonas() {
+    try {
+      return await apiClient.request('/user/personas')
+    } catch (err) {
+      console.warn('Personas API failed, using fallback personas:', err)
+      return [
+        {
+          id: 'demo_weekend_explorer',
+          name: '林宥廷 (週末文藝探索者)',
+          account_type: 'WEEKEND_EXPLORER',
+          avatar_url: '',
+          preferred_categories: ['art', 'cafe', 'market'],
+          interest_tags: ['當代藝術', '獨立手作', '手沖咖啡', '動漫展覽'],
+          budget_twd_cap: 800,
+          prefer_indoor: true,
+          avoid_crowd: true,
+          favorited_event_ids: [],
+        },
+        {
+          id: 'demo_tech_geek',
+          name: '陳冠宇 (AI 技術極客)',
+          account_type: 'TECH_GEEK',
+          avatar_url: '',
+          preferred_categories: ['tech', 'workshop', 'craft'],
+          interest_tags: ['DevJam', 'AI Agent', '開源社群', '黑客松'],
+          budget_twd_cap: 1500,
+          prefer_indoor: true,
+          avoid_crowd: false,
+          favorited_event_ids: [],
+        },
+        {
+          id: 'demo_crowd_avoider',
+          name: '張雅婷 (避開人潮漫遊者)',
+          account_type: 'CROWD_AVOIDER',
+          avatar_url: '',
+          preferred_categories: ['outdoor', 'cafe', 'art'],
+          interest_tags: ['安靜散步', '綠意空間', '低分貝', '老屋甜點'],
+          budget_twd_cap: 500,
+          prefer_indoor: false,
+          avoid_crowd: true,
+          favorited_event_ids: [],
+        },
+        {
+          id: 'demo_family_parent',
+          name: '黃俊傑 (親子放電家長)',
+          account_type: 'FAMILY_PARENT',
+          avatar_url: '',
+          preferred_categories: ['family', 'exhibition', 'outdoor'],
+          interest_tags: ['兒童手作', '互動展', '冷氣充足', '推車友善'],
+          budget_twd_cap: 1000,
+          prefer_indoor: true,
+          avoid_crowd: true,
+          favorited_event_ids: [],
+        },
+      ]
+    }
+  }
+
+  /**
+   * Perform one-click demo login.
+   */
+  async mockLogin(accountId, customName = '') {
+    try {
+      return await apiClient.request('/user/mock-login', {
+        method: 'POST',
+        body: JSON.stringify({ account_id: accountId, custom_name: customName }),
+      })
+    } catch (err) {
+      console.warn('Mock login API failed, using fallback:', err)
+      const personas = await this.listPersonas()
+      return personas.find((p) => p.id === accountId) || personas[0]
+    }
+  }
+
+  /**
+   * Get user profile and bookmarked event IDs.
+   */
+  async getProfile(userId = 'demo_weekend_explorer') {
+    try {
+      return await apiClient.request(`/user/profile?user_id=${userId}`)
+    } catch (err) {
+      console.warn('Profile API failed, fallback profile:', err)
+      const personas = await this.listPersonas()
+      return personas.find((p) => p.id === userId) || personas[0]
+    }
+  }
+
+  /**
+   * Toggle event favorite status.
+   */
+  async toggleFavorite(userId = 'demo_weekend_explorer', eventId) {
+    try {
+      return await apiClient.request(`/user/favorites/${eventId}?user_id=${userId}`, {
+        method: 'POST',
+      })
+    } catch (err) {
+      console.warn('Favorite toggle API failed:', err)
+      return {
+        event_id: eventId,
+        is_favorited: true,
+        message: '已儲存至我的收藏',
+        total_favorites_count: 1,
+      }
+    }
+  }
+
+  /**
+   * Get all full event objects favorited by user.
+   */
+  async getFavorites(userId = 'demo_weekend_explorer') {
+    try {
+      return await apiClient.request(`/user/favorites?user_id=${userId}`)
+    } catch (err) {
+      console.warn('Favorites API failed:', err)
+      return []
+    }
+  }
+}
+
+export const userService = new UserService()

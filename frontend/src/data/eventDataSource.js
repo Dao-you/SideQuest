@@ -1,31 +1,20 @@
 /**
- * @typedef {Object} EventRecord
- * @property {string} id
- * @property {string} title
- * @property {string} category
- * @property {string} startDate
- * @property {string} endDate
- * @property {string} highlight
- * @property {string} venue
- * @property {string} address
- * @property {string} fee
- * @property {string} admission
- * @property {string} organizer
- * @property {string} description
- * @property {string} sourceUrl
- * @property {string} secondarySourceUrl
- * @property {string} confidence
- * @property {string} notes
+ * Event Data Source with unified API client and CSV fallback.
  */
 
-/**
- * EventDataSource interface.
- *
- * Any future backend adapter only needs to expose the same list() contract.
- * @typedef {Object} EventDataSource
- * @property {string} label
- * @property {() => Promise<EventRecord[]>} list
- */
+const CATEGORY_NAMES = {
+  art: '當代藝術',
+  music: '音樂現場',
+  food: '美食探索',
+  outdoor: '戶外漫遊',
+  tech: '科技社群',
+  family: '親子活動',
+  cafe: '特色咖啡',
+  craft: '文創手作',
+  exhibition: '主題特展',
+  market: '風格市集',
+  workshop: '深度工作坊',
+}
 
 function parseCsv(text) {
   const rows = []
@@ -89,32 +78,48 @@ function recordFromCsvRow(row, headers, index) {
 }
 
 function recordFromApiEvent(event, index) {
-  const category = typeof event.category === 'string' ? event.category : event.category?.value || '城市活動'
-  const price = event.price_type === 'free' ? '免費' : event.price_amount ? `NT$ ${event.price_amount}` : '請見活動來源'
+  const rawCat = typeof event.category === 'string' ? event.category : event.category?.value || 'art'
+  const categoryLabel = CATEGORY_NAMES[rawCat.toLowerCase()] || rawCat || '城市活動'
+  const price = event.price_type === 'free' ? '免費入場' : event.price_amount ? `NT$ ${event.price_amount}` : '請見活動來源'
+  const admission = event.registration_status === 'free_entry'
+    ? '免報名自由入場'
+    : event.registration_status === 'open'
+    ? '開放線上報名 / 購票'
+    : event.registration_status || ''
+
   return {
     id: String(event.id || `api-event-${index + 1}`),
     title: event.title || `台北活動 ${index + 1}`,
-    category,
+    category: categoryLabel,
+    rawCategory: rawCat,
     startDate: event.start_time?.slice(0, 10) || '',
     endDate: event.end_time?.slice(0, 10) || '',
-    highlight: '',
+    highlight: event.tags?.slice(0, 3).join(' · ') || '',
     venue: event.venue_name || '',
     address: event.location?.address || '台北市',
+    district: event.location?.district || '台北市',
     fee: price,
-    admission: event.registration_status || '',
-    organizer: event.source_platform || '',
+    admission,
+    organizer: event.source_platform || '主辦單位',
     description: event.description || '',
     sourceUrl: event.source_url || '',
     secondarySourceUrl: '',
-    confidence: 'backend',
+    confidence: 'backend-verified',
     notes: '',
     latitude: event.location?.latitude,
     longitude: event.location?.longitude,
+    mrtStation: event.location?.mrt_station,
+    mrtDistanceMeters: event.location?.mrt_distance_meters,
+    isIndoor: event.is_indoor ?? true,
+    acAvailable: event.ac_available ?? true,
+    rating: event.rating ?? 4.5,
+    tags: event.tags || [],
+    imageUrl: event.image_url || '',
   }
 }
 
 export class CsvEventDataSource {
-  label = 'CSV MOCK'
+  label = 'CSV DATA'
 
   constructor(url = '/data/taipeidope_events.csv') {
     this.url = url
@@ -136,23 +141,39 @@ export class ApiEventDataSource {
 
   constructor(baseUrl = import.meta.env.VITE_EVENTS_API_URL || '/api/v1') {
     this.baseUrl = baseUrl.replace(/\/$/, '')
+    this.fallbackCsv = new CsvEventDataSource()
   }
 
-  async list() {
-    const response = await fetch(`${this.baseUrl}/events?limit=100`)
-    if (!response.ok) throw new Error(`Events API request failed: ${response.status}`)
-    const payload = await response.json()
-    const events = Array.isArray(payload) ? payload : payload.events || []
-    return events.map(recordFromApiEvent)
+  async list(filters = {}) {
+    try {
+      const queryParams = new URLSearchParams()
+      queryParams.set('limit', '100')
+      if (filters.category) queryParams.set('category', filters.category)
+      if (filters.district) queryParams.set('district', filters.district)
+      if (typeof filters.is_indoor === 'boolean') queryParams.set('is_indoor', String(filters.is_indoor))
+      if (filters.keyword) queryParams.set('keyword', filters.keyword)
+
+      const response = await fetch(`${this.baseUrl}/events?${queryParams.toString()}`)
+      if (!response.ok) throw new Error(`Events API request failed: ${response.status}`)
+      const payload = await response.json()
+      const events = Array.isArray(payload) ? payload : payload.events || []
+      if (events.length === 0) {
+        return this.fallbackCsv.list()
+      }
+      return events.map(recordFromApiEvent)
+    } catch (err) {
+      console.warn('Backend events API unreachable, falling back to local CSV:', err)
+      return this.fallbackCsv.list()
+    }
   }
 }
 
 /**
- * Runtime selection keeps the view layer independent from the storage/API choice.
- * @returns {EventDataSource}
+ * Creates the event data source instance.
+ * Defaults to ApiEventDataSource (with automatic CSV fallback).
  */
 export function createEventDataSource() {
-  return import.meta.env.VITE_EVENT_SOURCE === 'api'
-    ? new ApiEventDataSource()
-    : new CsvEventDataSource()
+  return import.meta.env.VITE_EVENT_SOURCE === 'csv'
+    ? new CsvEventDataSource()
+    : new ApiEventDataSource()
 }

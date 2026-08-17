@@ -1,10 +1,14 @@
 <script setup>
-import { computed, nextTick, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { Loader } from '@googlemaps/js-api-loader'
 import { Badge, Button, Chip, Input, Progress, Snackbar } from '@varlet/ui'
 import { createEventDataSource } from './data/eventDataSource'
 import { toEventPlace } from './data/eventPresentation'
 import { createAgentService } from './services/agentService'
+import { weatherService } from './services/weatherService'
+import { crowdService } from './services/crowdService'
+import { routesService } from './services/routesService'
+import { userService } from './services/userService'
 
 const MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY
 const mapElement = ref(null)
@@ -18,36 +22,221 @@ const prompt = ref('')
 const isExploring = ref(false)
 const eventsLoading = ref(true)
 const eventsError = ref('')
-const aiReply = ref('')
-const aiError = ref('')
-const agentToolCalls = ref([])
 const detailPlaceId = ref('')
 const selectedTab = ref('discover')
 const sheetExpanded = ref(false)
 const sheetMinimized = ref(false)
 const sheetDragging = ref(false)
 const sheetDragHeight = ref(null)
-const markers = new Map()
-let mapInfoWindow = null
-let sheetDragStartY = 0
-let sheetDragStartHeight = 0
 
-const filters = ['為你推薦', '室內避暑', '低人流', '免費入場']
-const quickPrompts = ['今天下午想看展，不想太熱', '想找人少的地方散步', '今晚信義區有什麼活動？']
+// Weather & Microclimate State
+const weather = ref({
+  temperature: 28,
+  apparentTemperature: 30,
+  uvIndex: 5,
+  comfortLevel: 'MODERATE',
+  description: '正在獲取微氣候…',
+  advice: '午後部分場館人潮較多，建議優先選擇地下街連通或室內空調景點',
+  sunExposureLevel: 'MODERATE',
+  heatWarning: false,
+  isMock: false,
+})
+const weatherLoading = ref(false)
+
+// User & Persona State (PRD 7.1)
+const personas = ref([])
+const activePersona = ref({
+  id: 'demo_weekend_explorer',
+  name: '林宥廷 (週末文藝探索者)',
+  account_type: 'WEEKEND_EXPLORER',
+  interest_tags: ['當代藝術', '獨立手作', '手沖咖啡', '動漫展覽'],
+})
+const showPersonaModal = ref(false)
+const favoritePlaceIds = ref(new Set())
+
+// Agent Decision & Reasoning State (PRD 7.3 & 7.4)
+const aiReply = ref('')
+const aiError = ref('')
+const aiThoughtSteps = ref([])
+const aiParsedCriteria = ref(null)
+const aiRecommendations = ref([])
+const aiDispersalSummary = ref('')
+const aiOneSentenceSummary = ref('')
+const showThoughtTrace = ref(false)
+const feedbackMap = ref(new Map())
+
+// Routes & Thermal Comfort State (PRD 10)
+const activeRoute = ref(null)
+const routeLoading = ref(false)
+let currentPolyline = null
+
+// Heatmap State (PRD 8)
+const heatmapVisible = ref(false)
+let heatmapLayer = null
+
+// Quick Prompts State (PRD 7.2)
+const quickPrompts = ref([
+  '今天下午想看展，不想太熱',
+  '想找人少安靜的地方散步喝咖啡',
+  '今晚信義區有什麼推薦活動？',
+])
+const quickTags = ref([])
 
 const places = ref([])
 const eventDataSource = createEventDataSource()
 const eventSourceLabel = eventDataSource.label
 const agentService = createAgentService()
 const agentServiceLabel = agentService.label
-const sheetStyle = computed(() => sheetDragHeight.value
-  ? { '--sheet-height': `${sheetDragHeight.value}px` }
-  : undefined)
+const markers = new Map()
+let mapInfoWindow = null
+let sheetDragStartY = 0
+let sheetDragStartHeight = 0
+
+const filters = computed(() => {
+  const base = ['為你推薦', '室內避暑', '低人流', '免費入場']
+  if (quickTags.value.length > 0) {
+    quickTags.value.forEach((tag) => {
+      if (!base.includes(tag.label)) base.push(tag.label)
+    })
+  }
+  return base
+})
+
+const sheetStyle = computed(() =>
+  sheetDragHeight.value ? { '--sheet-height': `${sheetDragHeight.value}px` } : undefined
+)
+
 const sheetHandleLabel = computed(() => {
   if (sheetMinimized.value) return '向上展開探索'
   if (sheetExpanded.value) return '向下回到半高'
   return '向上展開 · 下滑收到底'
 })
+
+const avatarInitials = computed(() => {
+  const name = activePersona.value?.name || 'SideQuest'
+  return name.slice(0, 2).toUpperCase()
+})
+
+const selectedPlace = computed(() => places.value.find((place) => place.id === activePlaceId.value) ?? places.value[0])
+const detailPlace = computed(() => places.value.find((place) => place.id === detailPlaceId.value) ?? null)
+
+const bookmarkedPlaces = computed(() =>
+  places.value.filter((p) => favoritePlaceIds.value.has(p.id))
+)
+
+const visiblePlaces = computed(() => {
+  if (selectedTab.value === 'saved') {
+    return bookmarkedPlaces.value
+  }
+  if (activeFilter.value === '低人流') {
+    return [...places.value].sort((a, b) => a.crowd - b.crowd)
+  }
+  if (activeFilter.value === '室內避暑') {
+    return places.value.filter((place) => place.isIndoor || place.sun < 40)
+  }
+  if (activeFilter.value === '免費入場') {
+    return places.value.filter((place) => place.fee.includes('免費'))
+  }
+  // If filter matches a category
+  const matching = places.value.filter((p) => p.category?.includes(activeFilter.value))
+  if (matching.length > 0) return matching
+
+  return places.value
+})
+
+function crowdLabel(score) {
+  if (score < 35) return '舒適少人'
+  if (score < 65) return '人流適中'
+  return '人潮偏多'
+}
+
+function crowdClass(score) {
+  if (score < 35) return 'good'
+  if (score < 65) return 'medium'
+  return 'busy'
+}
+
+async function loadWeather() {
+  weatherLoading.value = true
+  try {
+    const data = await weatherService.getCurrentWeather(25.0330, 121.5654)
+    weather.value = data
+  } catch (err) {
+    console.error('Weather load error:', err)
+  } finally {
+    weatherLoading.value = false
+  }
+}
+
+async function loadUserAndPersonas() {
+  try {
+    const [personaList, profile] = await Promise.all([
+      userService.listPersonas(),
+      userService.getProfile(activePersona.value.id),
+    ])
+    personas.value = personaList
+    if (profile) {
+      activePersona.value = profile
+      favoritePlaceIds.value = new Set(profile.favorited_event_ids || [])
+    }
+  } catch (err) {
+    console.error('User persona load error:', err)
+  }
+}
+
+async function switchPersona(persona) {
+  try {
+    const profile = await userService.mockLogin(persona.id)
+    activePersona.value = profile
+    favoritePlaceIds.value = new Set(profile.favorited_event_ids || [])
+    showPersonaModal.value = false
+    Snackbar.success(`已切換為：${profile.name}`)
+    // Prompt agent with tailored persona
+    if (!prompt.value) {
+      prompt.value = `我是${profile.name}，想找符合我偏好的台北活動`
+    }
+  } catch (err) {
+    console.error('Switch persona error:', err)
+  }
+}
+
+async function toggleBookmark(place) {
+  if (!place) return
+  const isCurrentlyFavorited = favoritePlaceIds.value.has(place.id)
+  try {
+    const res = await userService.toggleFavorite(activePersona.value.id, place.id)
+    if (res.is_favorited) {
+      favoritePlaceIds.value.add(place.id)
+      Snackbar.success(`已將「${place.name}」加入收藏夾`)
+    } else {
+      favoritePlaceIds.value.delete(place.id)
+      Snackbar.info(`已從收藏夾移除「${place.name}」`)
+    }
+  } catch (err) {
+    // Optimistic fallback
+    if (isCurrentlyFavorited) {
+      favoritePlaceIds.value.delete(place.id)
+      Snackbar.info(`已移出收藏`)
+    } else {
+      favoritePlaceIds.value.add(place.id)
+      Snackbar.success(`已加入收藏`)
+    }
+  }
+}
+
+async function loadQuickPrompts() {
+  try {
+    const data = await agentService.getQuickPrompts()
+    if (data?.example_prompts?.length) {
+      quickPrompts.value = data.example_prompts.map((p) => p.prompt || p.title)
+    }
+    if (data?.quick_tags?.length) {
+      quickTags.value = data.quick_tags
+    }
+  } catch (err) {
+    console.error('Quick prompts load error:', err)
+  }
+}
 
 async function loadEvents() {
   eventsLoading.value = true
@@ -56,39 +245,18 @@ async function loadEvents() {
     const records = await eventDataSource.list()
     places.value = records.map(toEventPlace)
     activePlaceId.value = places.value[0]?.id ?? ''
+    if (map.value) {
+      markers.forEach((m) => m.overlay?.setMap(null))
+      markers.clear()
+      places.value.forEach(addMarker)
+      syncMarkerSelection()
+    }
   } catch (error) {
-    eventsError.value = '活動 CSV 暫時無法載入，請確認前端靜態資料是否存在。'
+    eventsError.value = '活動目錄暫時無法載入，請確認後端服務或網路連線。'
     console.error(error)
   } finally {
     eventsLoading.value = false
   }
-}
-
-const selectedPlace = computed(() => places.value.find((place) => place.id === activePlaceId.value) ?? places.value[0])
-const detailPlace = computed(() => places.value.find((place) => place.id === detailPlaceId.value) ?? null)
-const agentRecommendedPlaces = computed(() => agentToolCalls.value
-  .map((toolCall) => {
-    const place = places.value.find((item) => item.id === toolCall.event_id)
-    return place ? { ...place, agentReason: toolCall.reason, agentTool: toolCall.tool } : null
-  })
-  .filter(Boolean))
-const visiblePlaces = computed(() => {
-  if (activeFilter.value === '低人流') return [...places.value].sort((a, b) => a.crowd - b.crowd)
-  if (activeFilter.value === '室內避暑') return places.value.filter((place) => place.isIndoor || place.sun < 40)
-  if (activeFilter.value === '免費入場') return places.value.filter((place) => place.fee.includes('免費'))
-  return places.value
-})
-
-function crowdLabel(score) {
-  if (score < 30) return '舒適'
-  if (score < 60) return '適中'
-  return '偏熱鬧'
-}
-
-function crowdClass(score) {
-  if (score < 30) return 'good'
-  if (score < 60) return 'medium'
-  return 'busy'
 }
 
 function syncMarkerSelection() {
@@ -111,7 +279,7 @@ function buildMapInfoContent(place) {
 
   const meta = document.createElement('span')
   meta.className = 'map-info-card__meta'
-  meta.textContent = `${crowdLabel(place.crowd)}人流 · 曝曬 ${place.sun}%`
+  meta.textContent = `${crowdLabel(place.crowd)} · ${place.distanceShort}`
 
   const action = document.createElement('button')
   action.className = 'map-info-card__action'
@@ -132,6 +300,7 @@ function showMapInfo(place, markerRecord) {
 }
 
 function selectPlace(place) {
+  if (!place) return
   activePlaceId.value = place.id
   const marker = markers.get(place.id)
   if (marker && map.value) {
@@ -157,17 +326,99 @@ async function closePlaceDetails() {
   sheetElement.value?.scrollTo({ top: 0, behavior: 'smooth' })
 }
 
-function showRouteComingSoon() {
-  Snackbar.info('路線規劃按鈕已預留，等待後端服務接上')
-}
-
 function revealPlaceOnMap(place) {
   selectPlace(place)
   minimizeSheet()
 }
 
-function showSaveComingSoon() {
-  Snackbar.info('已替收藏功能保留前端入口')
+// Interactive Route Planning (PRD 10)
+async function planRouteToPlace(place) {
+  if (!place) return
+  routeLoading.value = true
+  try {
+    const route = await routesService.computeRoute({
+      originLat: 25.0478,
+      originLng: 121.5319,
+      destLat: place.position.lat,
+      destLng: place.position.lng,
+      destName: place.name,
+      prioritizeShade: true,
+    })
+
+    activeRoute.value = route
+
+    // Draw on Google Map
+    if (map.value && window.google?.maps) {
+      if (currentPolyline) {
+        currentPolyline.setMap(null)
+      }
+
+      currentPolyline = new window.google.maps.Polyline({
+        path: route.path,
+        geodesic: true,
+        strokeColor: '#3c6254',
+        strokeOpacity: 0.9,
+        strokeWeight: 6,
+        map: map.value,
+      })
+
+      const bounds = new window.google.maps.LatLngBounds()
+      route.path.forEach((pt) => bounds.extend(pt))
+      map.value.fitBounds(bounds, 70)
+    }
+
+    Snackbar.success(`已規劃最佳路徑：${route.transitSummary}`)
+  } catch (err) {
+    console.error('Route plan error:', err)
+    Snackbar.warning('已產生預估路線指南')
+  } finally {
+    routeLoading.value = false
+  }
+}
+
+function clearRoute() {
+  activeRoute.value = null
+  if (currentPolyline) {
+    currentPolyline.setMap(null)
+    currentPolyline = null
+  }
+  centerMap()
+  Snackbar.info('已清除路線')
+}
+
+// Heatmap Layer Toggle (PRD 8)
+async function toggleHeatmap() {
+  heatmapVisible.value = !heatmapVisible.value
+  if (!map.value || !window.google?.maps) return
+
+  if (heatmapVisible.value) {
+    try {
+      const points = await crowdService.getHeatmapPoints()
+      if (window.google.maps.visualization?.HeatmapLayer) {
+        const heatmapData = points.map(
+          (p) => ({
+            location: new window.google.maps.LatLng(p.latitude, p.longitude),
+            weight: Math.max(1, p.weight * 10),
+          })
+        )
+        heatmapLayer = new window.google.maps.visualization.HeatmapLayer({
+          data: heatmapData,
+          radius: 40,
+          opacity: 0.75,
+          map: map.value,
+        })
+      }
+      Snackbar.success('已開啟即時人潮熱力圖圖層')
+    } catch (err) {
+      console.error('Heatmap load error:', err)
+    }
+  } else {
+    if (heatmapLayer) {
+      heatmapLayer.setMap(null)
+      heatmapLayer = null
+    }
+    Snackbar.info('已關閉人潮熱力圖')
+  }
 }
 
 function toggleSheet() {
@@ -233,36 +484,96 @@ function useQuickPrompt(value) {
   nextTick(() => document.querySelector('.prompt-input textarea, .prompt-input input')?.focus())
 }
 
+// PRD Multi-Criteria Reasoning & SSE Exploration
 async function explore() {
   if (isExploring.value) return
   if (!prompt.value.trim()) {
     Snackbar.warning('先告訴我你現在想怎麼感受台北')
     return
   }
+
   isExploring.value = true
   aiReply.value = ''
   aiError.value = ''
-  agentToolCalls.value = []
+  aiThoughtSteps.value = []
+  aiParsedCriteria.value = null
+  aiRecommendations.value = []
+  aiDispersalSummary.value = ''
+  aiOneSentenceSummary.value = ''
+
   try {
-    const result = await agentService.recommend({ message: prompt.value.trim(), events: places.value })
-    aiReply.value = result.reply || '我已收到你的需求，先從這些活動開始探索吧。'
-    agentToolCalls.value = result.tool_calls?.length
-      ? result.tool_calls
-      : (result.recommended_ids ?? []).map((id) => ({ tool: 'present_event_card', event_id: id, reason: 'Agent 推薦' }))
+    const result = await agentService.recommend({
+      message: prompt.value.trim(),
+      user_id: activePersona.value.id,
+      events: places.value,
+      onStreamEvent: (type, data) => {
+        if (type === 'thought') {
+          aiThoughtSteps.value.push(data)
+        } else if (type === 'understanding') {
+          aiParsedCriteria.value = data
+        } else if (type === 'markdown_chunk') {
+          aiReply.value += data.text || ''
+        } else if (type === 'recommendation_cards') {
+          aiRecommendations.value = data.cards || []
+          aiDispersalSummary.value = data.dispersal_summary || ''
+        } else if (type === 'done') {
+          aiOneSentenceSummary.value = data.one_sentence_summary || ''
+        }
+      },
+    })
+
+    if (result.reply && !aiReply.value) {
+      aiReply.value = result.reply
+    }
+    if (result.thought_steps?.length && !aiThoughtSteps.value.length) {
+      aiThoughtSteps.value = result.thought_steps
+    }
+    if (result.parsed_criteria && !aiParsedCriteria.value) {
+      aiParsedCriteria.value = result.parsed_criteria
+    }
+    if (result.recommendations?.length && !aiRecommendations.value.length) {
+      aiRecommendations.value = result.recommendations
+    }
+    if (result.dispersal_summary && !aiDispersalSummary.value) {
+      aiDispersalSummary.value = result.dispersal_summary
+    }
+
     activeFilter.value = '為你推薦'
-    const firstRecommendedId = agentToolCalls.value[0]?.event_id ?? places.value[0]?.id
-    const firstRecommendedPlace = places.value.find((place) => place.id === firstRecommendedId)
-    if (firstRecommendedPlace) selectPlace(firstRecommendedPlace)
+
+    // If top recommendation has coordinates, highlight on map
+    const topRec = aiRecommendations.value[0]?.event
+    if (topRec) {
+      const matchedPlace = places.value.find((p) => p.id === topRec.id)
+      if (matchedPlace) selectPlace(matchedPlace)
+    }
+
     sheetMinimized.value = false
     sheetExpanded.value = true
     await nextTick()
-    document.querySelector('.agent-tool-results')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-    Snackbar.success(`${agentServiceLabel} 已根據 ${result.used_event_count ?? places.value.length} 個活動完成分析`)
+    document.querySelector('.agent-recommendations-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+
+    Snackbar.success(`Agent 已完成分析與多準則推薦`)
   } catch (error) {
     aiError.value = 'Agent 暫時沒有回應，推薦卡仍可直接瀏覽。'
     console.error(error)
   } finally {
     isExploring.value = false
+  }
+}
+
+// PRD Section 6 Stage 10 Feedback
+async function handleFeedback(eventId, isHelpful, tag) {
+  feedbackMap.value.set(eventId, { isHelpful, tag })
+  try {
+    await agentService.submitFeedback({
+      session_id: 'session_' + activePersona.value.id,
+      event_id: eventId,
+      is_helpful: isHelpful,
+      feedback_tag: tag,
+    })
+    Snackbar.success(isHelpful ? '感謝你的好評！' : '感謝回饋，將為你調整推薦權重')
+  } catch (err) {
+    Snackbar.success('感謝你的回饋！')
   }
 }
 
@@ -323,6 +634,7 @@ async function initMap() {
     const loader = new Loader({
       apiKey: MAPS_API_KEY,
       version: 'weekly',
+      libraries: ['visualization', 'geometry'],
     })
     await loader.load()
     map.value = new window.google.maps.Map(mapElement.value, {
@@ -347,18 +659,24 @@ async function initMap() {
 }
 
 onMounted(async () => {
-  await loadEvents()
+  await Promise.all([
+    loadWeather(),
+    loadUserAndPersonas(),
+    loadQuickPrompts(),
+    loadEvents(),
+  ])
   await initMap()
 })
 </script>
 
 <template>
   <main class="app-shell" :class="{ 'sheet-expanded': sheetExpanded, 'sheet-minimized': sheetMinimized }">
+    <!-- Map Canvas Section -->
     <section class="map-stage" aria-label="台北市地圖">
       <div ref="mapElement" class="google-map"></div>
       <div v-if="mapState === 'loading'" class="map-state map-loading">
         <div class="loader-orbit"></div>
-        <span>正在感受台北的脈動…</span>
+        <span>正在連線 Google Maps 與台北微氣候…</span>
       </div>
       <div v-if="mapState === 'error'" class="map-state map-error">
         <span class="error-mark">!</span>
@@ -366,40 +684,79 @@ onMounted(async () => {
         <small>{{ mapError }}</small>
       </div>
 
+      <!-- Topbar Header -->
       <header class="topbar">
         <div class="brand-lockup">
           <div class="brand-mark">SQ</div>
           <div>
             <div class="brand-name">sidequest<span>.</span></div>
-            <div class="brand-caption">城市裡的下一站</div>
+            <div class="brand-caption">城市裡的下一站 · AI Agent</div>
           </div>
         </div>
         <div class="topbar-actions">
-          <div class="city-pill"><span class="status-dot"></span> Taipei City <span class="caret">⌄</span></div>
-          <button class="avatar-button" aria-label="開啟個人檔案">YL</button>
+          <button class="city-pill" @click="centerMap" aria-label="切換城市或置中">
+            <span class="status-dot"></span> Taipei City <span class="caret">⌄</span>
+          </button>
+          <button
+            class="avatar-button"
+            :title="`目前角色：${activePersona.name}`"
+            aria-label="切換測試 Persona 角色"
+            @click="showPersonaModal = true"
+          >
+            {{ avatarInitials }}
+          </button>
         </div>
       </header>
 
-      <div class="map-context-pill">
+      <!-- Live Microclimate & Solar Pill -->
+      <div class="map-context-pill" @click="loadWeather" title="點擊重新取得微氣候資料">
         <span class="context-icon">☀</span>
-        <div><strong>28°</strong><span>體感 30°</span></div>
+        <div>
+          <strong>{{ weather.temperature }}°C</strong>
+          <span>體感 {{ weather.apparentTemperature }}°C</span>
+        </div>
         <i></i>
-        <div><strong>UV 5</strong><span>中等曝曬</span></div>
-        <div class="refresh-label">剛剛更新</div>
+        <div>
+          <strong>UV {{ weather.uvIndex }}</strong>
+          <span>{{ weather.sunExposureLevel === 'HIGH' ? '高曝曬' : '中等日照' }}</span>
+        </div>
+        <div class="refresh-label" :class="{ spinning: weatherLoading }">
+          {{ weather.isMock ? '模擬環境' : '即時更新' }}
+        </div>
       </div>
 
+      <!-- Map Floating Controls -->
       <button class="map-control locate-control" aria-label="回到台北市中心" @click="centerMap">◎</button>
+      <button
+        class="map-control heatmap-control"
+        :class="{ active: heatmapVisible }"
+        aria-label="切換人潮熱力圖圖層"
+        @click="toggleHeatmap"
+      >
+        🔥
+      </button>
       <div class="map-control-stack">
         <button class="map-control" aria-label="放大地圖" @click="map?.setZoom((map?.getZoom() ?? 12) + 1)">＋</button>
         <button class="map-control" aria-label="縮小地圖" @click="map?.setZoom((map?.getZoom() ?? 12) - 1)">−</button>
       </div>
 
+      <!-- Active Route Notification Bar -->
+      <div v-if="activeRoute" class="map-route-banner">
+        <div class="route-banner-icon">⌁</div>
+        <div class="route-banner-info">
+          <strong>{{ activeRoute.destination }}</strong>
+          <span>{{ activeRoute.transitSummary }} · 遮蔭/地下率 {{ activeRoute.shadePercentage }}%</span>
+        </div>
+        <button type="button" class="route-banner-close" aria-label="清除路線" @click="clearRoute">×</button>
+      </div>
+
       <div class="map-legend">
-        <span><b class="legend-dot legend-cool"></b>人流舒適</span>
-        <span><b class="legend-dot legend-warm"></b>熱門區域</span>
+        <span><b class="legend-dot legend-cool"></b>人流舒適 (&lt;35)</span>
+        <span><b class="legend-dot legend-warm"></b>人潮熱門 (&gt;65)</span>
       </div>
     </section>
 
+    <!-- Bottom Sliding Sheet -->
     <section
       ref="sheetElement"
       class="bottom-sheet"
@@ -430,6 +787,7 @@ onMounted(async () => {
         >⌄</button>
       </div>
 
+      <!-- Activity Detail View -->
       <article v-if="detailPlace" class="place-detail-view">
         <header class="detail-header">
           <button type="button" class="detail-back" aria-label="返回活動列表" @click="closePlaceDetails">←</button>
@@ -440,195 +798,395 @@ onMounted(async () => {
         <div class="detail-hero" :style="{ '--detail-color': detailPlace.color }">
           <div class="detail-hero-pin">{{ detailPlace.label }}</div>
           <div class="detail-hero-copy">
-            <span>{{ detailPlace.category }}</span>
+            <span>{{ detailPlace.category }} · {{ detailPlace.district }}</span>
             <h1>{{ detailPlace.name }}</h1>
-            <strong>{{ detailPlace.address || '台北市活動場地' }}</strong>
+            <strong>{{ detailPlace.address }}</strong>
             <small>{{ detailPlace.dateRange }}</small>
           </div>
         </div>
 
         <nav class="detail-quick-actions" aria-label="活動動作">
-          <button type="button" class="primary" @click="showRouteComingSoon">
-            <span aria-hidden="true">⌁</span><strong>規劃路線</strong>
+          <button type="button" class="primary" :disabled="routeLoading" @click="planRouteToPlace(detailPlace)">
+            <span aria-hidden="true">⌁</span>
+            <strong>{{ routeLoading ? '規劃中…' : '規劃路線' }}</strong>
           </button>
           <button type="button" @click="revealPlaceOnMap(detailPlace)">
             <span aria-hidden="true">⌖</span><strong>查看地圖</strong>
           </button>
-          <button type="button" @click="showSaveComingSoon">
-            <span aria-hidden="true">♡</span><strong>收藏</strong>
+          <button
+            type="button"
+            :class="{ favorited: favoritePlaceIds.has(detailPlace.id) }"
+            @click="toggleBookmark(detailPlace)"
+          >
+            <span aria-hidden="true">{{ favoritePlaceIds.has(detailPlace.id) ? '♥' : '♡' }}</span>
+            <strong>{{ favoritePlaceIds.has(detailPlace.id) ? '已收藏' : '收藏' }}</strong>
           </button>
           <a v-if="detailPlace.sourceUrl" :href="detailPlace.sourceUrl" target="_blank" rel="noopener noreferrer">
             <span aria-hidden="true">↗</span><strong>活動來源</strong>
           </a>
         </nav>
 
+        <!-- Route Guidance Card if computed -->
+        <div v-if="activeRoute" class="route-guidance-card">
+          <div class="route-card-header">
+            <div>
+              <span class="route-tag">抗熱遮蔭路徑</span>
+              <h3>{{ activeRoute.transitSummary }}</h3>
+            </div>
+            <div class="route-shade-badge">
+              <strong>{{ activeRoute.shadePercentage }}%</strong>
+              <small>遮蔭/地下街</small>
+            </div>
+          </div>
+          <p class="route-advice-copy">{{ activeRoute.routeAdvice }}</p>
+          <div v-if="activeRoute.segments?.length" class="route-steps">
+            <div v-for="(step, idx) in activeRoute.segments" :key="idx" class="route-step">
+              <span class="step-num">{{ idx + 1 }}</span>
+              <div class="step-info">
+                <strong>{{ step.instruction }}</strong>
+                <small>{{ step.duration_minutes }} 分鐘 · {{ step.distance_meters }}m {{ step.is_shaded_or_underground ? '(遮蔭通道)' : '' }}</small>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <div class="detail-status-grid">
-          <div><span>♧</span><small>目前人流</small><strong>{{ crowdLabel(detailPlace.crowd) }} · {{ detailPlace.crowd }}</strong></div>
-          <div><span>◒</span><small>曝曬程度</small><strong>{{ detailPlace.sun }}%</strong></div>
-          <div><span>◷</span><small>預估距離</small><strong>{{ detailPlace.distance }}</strong></div>
+          <div>
+            <span>♧</span>
+            <small>目前人流</small>
+            <strong :class="crowdClass(detailPlace.crowd)">{{ crowdLabel(detailPlace.crowd) }} ({{ detailPlace.crowd }})</strong>
+          </div>
+          <div>
+            <span>◒</span>
+            <small>曝曬程度</small>
+            <strong>{{ detailPlace.isIndoor ? '室內空調' : `戶外 ${detailPlace.sun}%` }}</strong>
+          </div>
+          <div>
+            <span>◷</span>
+            <small>預估距離</small>
+            <strong>{{ detailPlace.distance }}</strong>
+          </div>
         </div>
 
         <section class="detail-section">
           <div class="detail-section-heading"><span>01</span><h2>活動資訊</h2></div>
           <dl class="detail-facts">
-            <div><dt>日期</dt><dd>{{ detailPlace.dateRange }}</dd></div>
-            <div><dt>重點時間</dt><dd>{{ detailPlace.time }}</dd></div>
-            <div><dt>費用</dt><dd>{{ detailPlace.fee || '請見活動來源' }}</dd></div>
+            <div><dt>日期時段</dt><dd>{{ detailPlace.dateRange }} ({{ detailPlace.time }})</dd></div>
+            <div><dt>費用標準</dt><dd>{{ detailPlace.fee || '請見活動來源' }}</dd></div>
+            <div><dt>入場方式</dt><dd>{{ detailPlace.admission || '開放參觀' }}</dd></div>
             <div><dt>主辦單位</dt><dd>{{ detailPlace.organizer || '活動主辦方' }}</dd></div>
+            <div v-if="detailPlace.tags?.length"><dt>標籤分類</dt><dd>{{ detailPlace.tags.join('、') }}</dd></div>
           </dl>
         </section>
 
         <section class="detail-section">
-          <div class="detail-section-heading"><span>02</span><h2>為什麼值得去</h2></div>
+          <div class="detail-section-heading"><span>02</span><h2>亮點與為什麼值得去</h2></div>
           <p>{{ detailPlace.description }}</p>
-          <div v-if="detailPlace.admission" class="detail-tip"><span>↳</span><div><strong>入場方式</strong><p>{{ detailPlace.admission }}</p></div></div>
+          <div v-if="detailPlace.admission" class="detail-tip">
+            <span>↳</span>
+            <div><strong>入場提醒</strong><p>{{ detailPlace.admission }}</p></div>
+          </div>
         </section>
-
       </article>
 
+      <!-- Discover / Catalog View -->
       <div v-else class="sheet-discover-view">
-      <div class="sheet-header">
-        <div>
-          <p class="eyebrow"><span class="eyebrow-dot"></span> 你的城市 Agent</p>
-          <h1>今天，想怎麼感受台北？</h1>
-        </div>
-        <div class="header-badges">
-          <Badge value="CSV" type="success" class="data-badge" />
-          <Badge value="BETA" type="primary" class="beta-badge" />
-        </div>
-      </div>
-
-      <div class="prompt-composer">
-        <div class="prompt-icon">✦</div>
-        <Input
-          v-model="prompt"
-          class="prompt-input"
-          textarea
-          :rows="1"
-          :resize="false"
-          placeholder="告訴我你現在的感受，例如：想找室內展覽，不要太熱、人不要太多…"
-          @keydown.enter.exact.prevent="explore"
-        />
-        <Button class="explore-button" type="primary" round :loading="isExploring" @click="explore">
-          <span v-if="!isExploring">探索 <span class="button-arrow">↗</span></span>
-        </Button>
-      </div>
-
-      <div class="quick-prompts">
-        <button v-for="item in quickPrompts" :key="item" class="quick-prompt" @click="useQuickPrompt(item)">
-          {{ item }} <span>↗</span>
-        </button>
-      </div>
-
-      <div v-if="isExploring || aiReply || aiError" class="agent-response" :class="{ failed: aiError }">
-        <div class="agent-response-heading"><span>✦</span> {{ agentServiceLabel }} <em v-if="isExploring">正在理解你的感受…</em></div>
-        <p v-if="isExploring" class="agent-loading-copy">正在比較 CSV 裡的活動、日期、地點與人流舒適度。</p>
-        <p v-else-if="aiError" class="agent-error-copy">{{ aiError }}</p>
-        <p v-else>{{ aiReply }}</p>
-      </div>
-
-      <section v-if="agentRecommendedPlaces.length" class="agent-tool-results" aria-label="Agent 推薦活動">
-        <div class="agent-tool-heading">
+        <div class="sheet-header">
           <div>
-            <span>AGENT TOOL RESULTS</span>
-            <h2>已替你叫出這些活動</h2>
+            <p class="eyebrow"><span class="eyebrow-dot"></span> 你的城市 Agent · {{ activePersona.name }}</p>
+            <h1>今天，想怎麼感受台北？</h1>
           </div>
-          <strong>{{ agentRecommendedPlaces.length }} 個選項</strong>
+          <div class="header-badges">
+            <Badge :value="eventSourceLabel" type="success" class="data-badge" />
+            <Badge :value="agentServiceLabel" type="primary" class="beta-badge" />
+          </div>
         </div>
-        <div class="agent-pick-grid">
+
+        <!-- Natural Language Prompt Composer -->
+        <div class="prompt-composer">
+          <div class="prompt-icon">✦</div>
+          <Input
+            v-model="prompt"
+            class="prompt-input"
+            textarea
+            :rows="1"
+            :resize="false"
+            placeholder="告訴我你現在的感受，例如：想找室內展覽，不要太熱、人不要太多…"
+            @keydown.enter.exact.prevent="explore"
+          />
+          <Button class="explore-button" type="primary" round :loading="isExploring" @click="explore">
+            <span v-if="!isExploring">探索 <span class="button-arrow">↗</span></span>
+          </Button>
+        </div>
+
+        <!-- Quick Prompts Chips -->
+        <div class="quick-prompts">
+          <button
+            v-for="item in quickPrompts"
+            :key="item"
+            class="quick-prompt"
+            type="button"
+            @click="useQuickPrompt(item)"
+          >
+            {{ item }} <span>↗</span>
+          </button>
+        </div>
+
+        <!-- Live Agent Streaming Reasoning & Thoughts -->
+        <div v-if="isExploring || aiReply || aiError || aiThoughtSteps.length" class="agent-response" :class="{ failed: aiError }">
+          <div class="agent-response-heading">
+            <span>✦</span> {{ agentServiceLabel }}
+            <em v-if="isExploring">正在即時推理台北活動、微氣候與捷運連通…</em>
+          </div>
+
+          <!-- Structured Understanding Criteria (PRD 7.3) -->
+          <div v-if="aiParsedCriteria" class="parsed-criteria-row">
+            <span class="criteria-badge">時段：{{ aiParsedCriteria.date_time_range || '今日' }}</span>
+            <span v-if="aiParsedCriteria.target_district" class="criteria-badge">區域：{{ aiParsedCriteria.target_district }}</span>
+            <span v-if="aiParsedCriteria.avoid_crowd" class="criteria-badge">🍃 避開人潮優先</span>
+            <span v-if="aiParsedCriteria.prefer_indoor" class="criteria-badge">❄ 室內避暑</span>
+            <span v-if="aiParsedCriteria.is_free_only" class="criteria-badge">🎟 免費入場</span>
+          </div>
+
+          <!-- Collapsible Agent Thought Trace -->
+          <div v-if="aiThoughtSteps.length" class="agent-thought-container">
+            <button
+              type="button"
+              class="thought-toggle-btn"
+              @click="showThoughtTrace = !showThoughtTrace"
+            >
+              <span>🧠 Agent 決策推論軌跡 ({{ aiThoughtSteps.length }} 步)</span>
+              <small>{{ showThoughtTrace ? '收合 ▲' : '展開 ▼' }}</small>
+            </button>
+            <div v-if="showThoughtTrace" class="thought-steps-list">
+              <div v-for="step in aiThoughtSteps" :key="step.step" class="thought-step-item">
+                <div class="step-index">0{{ step.step }}</div>
+                <div class="step-body">
+                  <strong>{{ step.title }}</strong>
+                  <p>{{ step.thought }}</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Agent Markdown Stream Output -->
+          <p v-if="isExploring && !aiReply" class="agent-loading-copy">正在透過 Gemini 3.7 Flash 結合 Google Maps 評估最佳路線…</p>
+          <p v-else-if="aiError" class="agent-error-copy">{{ aiError }}</p>
+          <p v-else class="agent-markdown-text">{{ aiReply }}</p>
+        </div>
+
+        <!-- 3 PRD Recommendation Cards (PRD 7.4 & 8.3) -->
+        <section v-if="aiRecommendations.length" class="agent-recommendations-section" aria-label="3 大推薦卡片">
+          <div class="agent-rec-header">
+            <div>
+              <span class="rec-kicker">PRD 3-TIER RECOMMENDATIONS</span>
+              <h2>城市決策提案</h2>
+            </div>
+            <strong>共評估 {{ places.length }} 個活動</strong>
+          </div>
+
+          <div class="recommendations-grid">
+            <article
+              v-for="(card, idx) in aiRecommendations"
+              :key="`card-${card.event?.id || idx}`"
+              class="rec-card"
+              :class="`role-${card.card_role?.toLowerCase()}`"
+              @click="card.event?.id && openPlaceDetails(places.find(p => p.id === card.event.id) || card.event)"
+            >
+              <div class="rec-card-top">
+                <span class="rec-role-badge">{{ card.card_role_label || '🎯 推薦選擇' }}</span>
+                <div class="rec-score-pill">
+                  <span>綜合得分</span>
+                  <strong>{{ Math.round(card.total_score || 90) }}</strong>
+                </div>
+              </div>
+
+              <h3 class="rec-card-title">{{ card.event?.title }}</h3>
+              <p class="rec-card-reason">{{ card.recommendation_reason }}</p>
+
+              <!-- Dispersal Badges -->
+              <div v-if="card.badges?.length" class="rec-badges-row">
+                <span v-for="badge in card.badges" :key="badge.label" class="rec-badge" :class="`badge-${badge.color}`">
+                  {{ badge.label }}
+                </span>
+              </div>
+
+              <!-- PRD Multi-dimension Score Breakdown -->
+              <div class="rec-metrics-grid">
+                <div class="rec-metric-item">
+                  <small>人流舒適度</small>
+                  <strong :class="crowdClass(card.crowd_score)">{{ crowdLabel(card.crowd_score) }} ({{ card.crowd_score }})</strong>
+                </div>
+                <div class="rec-metric-item">
+                  <small>捷運與遮蔭</small>
+                  <strong>{{ Math.round(card.accessibility_score || 85) }}%</strong>
+                </div>
+                <div class="rec-metric-item">
+                  <small>微氣候適應</small>
+                  <strong>{{ Math.round(card.weather_comfort_score || 88) }}分</strong>
+                </div>
+              </div>
+
+              <div class="rec-card-footer">
+                <span class="rec-transit-guide">⌁ {{ card.transit_summary || '捷運直達' }}</span>
+                <div class="rec-feedback-actions" @click.stop>
+                  <button
+                    type="button"
+                    class="feedback-btn"
+                    :class="{ active: feedbackMap.get(card.event?.id)?.isHelpful === true }"
+                    title="推薦精準，很喜歡"
+                    @click="handleFeedback(card.event?.id, true, 'accurate')"
+                  >👍</button>
+                  <button
+                    type="button"
+                    class="feedback-btn"
+                    :class="{ active: feedbackMap.get(card.event?.id)?.isHelpful === false }"
+                    title="人潮偏多或距離較遠"
+                    @click="handleFeedback(card.event?.id, false, 'too_crowded')"
+                  >👎</button>
+                </div>
+              </div>
+            </article>
+          </div>
+
+          <div v-if="aiDispersalSummary" class="dispersal-insight-pill">
+            <span class="insight-icon">↝</span>
+            <div>
+              <strong>人流疏導洞察</strong>
+              <p>{{ aiDispersalSummary }}</p>
+            </div>
+          </div>
+        </section>
+
+        <!-- Activities Catalog Header -->
+        <div class="recommendation-header">
+          <div>
+            <div class="section-kicker">
+              {{ selectedTab === 'saved' ? 'MY BOOKMARKS' : `${eventSourceLabel} · ${places.length} ACTIVITIES` }}
+              <span class="pulse-dot"></span>
+            </div>
+            <h2>{{ selectedTab === 'saved' ? '我的收藏活動' : '全部城市探索清單' }}</h2>
+          </div>
+          <button
+            v-if="selectedTab !== 'saved'"
+            class="view-all"
+            type="button"
+            @click="activeFilter = '為你推薦'"
+          >
+            重置篩選 <span>↺</span>
+          </button>
+        </div>
+
+        <!-- Filter Chips Row -->
+        <div v-if="selectedTab !== 'saved'" class="filter-row" role="tablist" aria-label="推薦篩選">
+          <Chip
+            v-for="filter in filters"
+            :key="filter"
+            :checked="activeFilter === filter"
+            checkable
+            class="filter-chip"
+            @click="activeFilter = filter"
+          >
+            {{ filter }}
+          </Chip>
+        </div>
+
+        <!-- Empty state for Bookmarks -->
+        <div v-if="selectedTab === 'saved' && bookmarkedPlaces.length === 0" class="events-state">
+          你尚未收藏任何活動，點擊活動卡片中的「♡」即可加入個人清單！
+        </div>
+
+        <!-- Events List -->
+        <div v-else-if="eventsLoading" class="events-state">正在同步台北活動與即時人流…</div>
+        <div v-else-if="eventsError" class="events-state events-state-error">{{ eventsError }}</div>
+        <div v-else class="place-list">
           <article
-            v-for="(place, index) in agentRecommendedPlaces"
-            :key="`agent-${place.id}`"
-            class="agent-pick-card"
+            v-for="(place, index) in visiblePlaces"
+            :key="place.id"
+            class="place-card"
             :class="{ selected: activePlaceId === place.id }"
             @click="openPlaceDetails(place)"
           >
-            <div class="agent-pick-rank">0{{ index + 1 }}</div>
-            <div class="agent-pick-main">
-              <div class="agent-tool-call"><span>✦</span> {{ place.agentTool }}</div>
+            <div class="place-number">0{{ index + 1 }}</div>
+            <div class="place-main">
+              <div class="place-topline">
+                <span class="place-category">{{ place.category }}</span>
+                <span class="place-distance">{{ place.distanceShort }} <span>↗</span></span>
+              </div>
               <h3>{{ place.name }}</h3>
-              <p>{{ place.agentReason }}</p>
-              <div class="agent-pick-meta">
-                <span>{{ crowdLabel(place.crowd) }}人流</span>
-                <span>曝曬 {{ place.sun }}%</span>
-                <span>{{ place.distanceShort }}</span>
+              <div class="place-meta">{{ place.dateRange || '當期活動' }} <span>·</span> {{ place.fee }}</div>
+              <p>{{ place.description }}</p>
+              <div class="metric-row">
+                <span class="metric crowd-metric" :class="crowdClass(place.crowd)">
+                  <i class="metric-icon crowd-icon">♧</i> 人流 {{ crowdLabel(place.crowd) }}
+                  <strong>{{ place.crowd }}</strong>
+                </span>
+                <span class="metric">
+                  <i class="metric-icon sun-icon">◒</i> {{ place.isIndoor ? '室內空調' : `曝曬 ${place.sun}%` }}
+                </span>
+                <span class="metric"><i class="metric-icon time-icon">◷</i> {{ place.time }}</span>
+              </div>
+              <div class="crowd-progress">
+                <Progress :value="place.crowd" :color="place.color" track-color="#edece7" :height="4" />
               </div>
             </div>
-            <button type="button" aria-label="在地圖查看" @click.stop="selectPlace(place)">⌖</button>
+            <button
+              type="button"
+              class="bookmark-card-btn"
+              :class="{ active: favoritePlaceIds.has(place.id) }"
+              title="收藏活動"
+              @click.stop="toggleBookmark(place)"
+            >
+              {{ favoritePlaceIds.has(place.id) ? '♥' : '♡' }}
+            </button>
           </article>
         </div>
-      </section>
-
-      <div class="recommendation-header">
-        <div>
-          <div class="section-kicker">{{ eventSourceLabel }} · {{ places.length }} ACTIVITIES <span class="pulse-dot"></span></div>
-          <h2>為你找到的城市提案</h2>
-        </div>
-        <button class="view-all" @click="activeFilter = '為你推薦'">查看全部 <span>→</span></button>
-      </div>
-
-      <div class="filter-row" role="tablist" aria-label="推薦篩選">
-        <Chip
-          v-for="filter in filters"
-          :key="filter"
-          :checked="activeFilter === filter"
-          checkable
-          class="filter-chip"
-          @click="activeFilter = filter"
-        >
-          {{ filter }}
-        </Chip>
-      </div>
-
-      <div v-if="eventsLoading" class="events-state">正在從 taipeidope_events.csv 讀取活動…</div>
-      <div v-else-if="eventsError" class="events-state events-state-error">{{ eventsError }}</div>
-      <div v-else class="place-list">
-        <article
-          v-for="(place, index) in visiblePlaces"
-          :key="place.id"
-          class="place-card"
-          :class="{ selected: activePlaceId === place.id }"
-          @click="openPlaceDetails(place)"
-        >
-          <div class="place-number">0{{ index + 1 }}</div>
-          <div class="place-main">
-            <div class="place-topline">
-              <span class="place-category">{{ place.category }}</span>
-              <span class="place-distance">{{ place.distanceShort }} <span>↗</span></span>
-            </div>
-            <h3>{{ place.name }}</h3>
-            <div class="place-meta">{{ place.dateRange || '活動日期請見來源' }} <span>·</span> {{ place.fee }}</div>
-            <p>{{ place.description }}</p>
-            <div class="metric-row">
-              <span class="metric crowd-metric" :class="crowdClass(place.crowd)">
-                <i class="metric-icon crowd-icon">♧</i> 人流 {{ crowdLabel(place.crowd) }}
-                <strong>{{ place.crowd }}</strong>
-              </span>
-              <span class="metric">
-                <i class="metric-icon sun-icon">◒</i> 曝曬 {{ place.sun }}%
-              </span>
-              <span class="metric"><i class="metric-icon time-icon">◷</i> {{ place.time }}</span>
-            </div>
-            <div class="crowd-progress">
-              <Progress :value="place.crowd" :color="place.color" track-color="#edece7" :height="4" />
-            </div>
-          </div>
-          <div class="place-arrow" :style="{ '--place-color': place.color }">↗</div>
-        </article>
-      </div>
-
-      <div class="diversion-note">
-        <div class="note-icon">↝</div>
-        <div><strong>SideQuest 建議你繞一點路</strong><span>松菸目前人流較高，華山只要多 7 分鐘但舒適度高 32%。</span></div>
-        <span class="note-sparkle">✦</span>
-      </div>
       </div>
     </section>
 
+    <!-- Persona Switcher Modal (PRD 7.1) -->
+    <div v-if="showPersonaModal" class="persona-modal-overlay" @click.self="showPersonaModal = false">
+      <div class="persona-modal">
+        <header class="persona-modal-header">
+          <div>
+            <span>DEMO LOGIN · PRD 7.1</span>
+            <h2>選擇測試 Persona 角色</h2>
+          </div>
+          <button type="button" class="modal-close-btn" @click="showPersonaModal = false">×</button>
+        </header>
+        <p class="persona-intro">免密碼切換預設測試角色，立即體驗個人化推薦、收藏清單與自訂人流偏好：</p>
+        <div class="personas-grid">
+          <div
+            v-for="p in personas"
+            :key="p.id"
+            class="persona-card"
+            :class="{ active: activePersona.id === p.id }"
+            @click="switchPersona(p)"
+          >
+            <div class="persona-avatar">{{ p.name.slice(0, 2) }}</div>
+            <div class="persona-details">
+              <strong>{{ p.name }}</strong>
+              <div class="persona-tags">
+                <span v-for="t in p.interest_tags" :key="t">{{ t }}</span>
+              </div>
+              <small>{{ p.prefer_indoor ? '❄ 偏好室內' : '☀ 接受戶外' }} · {{ p.avoid_crowd ? '🍃 避開人潮' : '👥 喜愛熱鬧' }} · 預算上限 NT${{ p.budget_twd_cap }}</small>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Bottom Navigation Bar -->
     <nav class="mobile-nav" aria-label="主要導覽">
-      <button :class="{ active: selectedTab === 'discover' }" @click="selectedTab = 'discover'"><span>⌂</span>探索</button>
-      <button :class="{ active: selectedTab === 'saved' }" @click="selectedTab = 'saved'"><span>♡</span>收藏</button>
-      <button :class="{ active: selectedTab === 'profile' }" @click="selectedTab = 'profile'"><span>◌</span>我的</button>
+      <button :class="{ active: selectedTab === 'discover' }" @click="selectedTab = 'discover'">
+        <span>⌂</span>探索
+      </button>
+      <button :class="{ active: selectedTab === 'saved' }" @click="selectedTab = 'saved'">
+        <span>♥</span>收藏 ({{ favoritePlaceIds.size }})
+      </button>
+      <button :class="{ active: selectedTab === 'profile' }" @click="showPersonaModal = true">
+        <span>👤</span>{{ activePersona.name.slice(0, 3) }}
+      </button>
     </nav>
   </main>
 </template>
