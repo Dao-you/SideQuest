@@ -93,7 +93,6 @@ const places = ref([])
 const eventDataSource = createEventDataSource()
 const eventSourceLabel = eventDataSource.label
 const agentService = createAgentService()
-const agentServiceLabel = agentService.label
 const markers = new Map()
 let sheetDragStartY = 0
 let sheetDragStartHeight = 0
@@ -1158,7 +1157,6 @@ onMounted(async () => {
           </div>
           <div class="header-badges">
             <Badge :value="eventSourceLabel" type="success" class="data-badge" />
-            <Badge :value="agentServiceLabel" type="primary" class="beta-badge" />
           </div>
         </div>
 
@@ -1195,7 +1193,7 @@ onMounted(async () => {
         <!-- Live Agent Streaming Reasoning & Thoughts -->
         <div v-if="isExploring || aiReply || aiError || aiThoughtSteps.length" class="agent-response" :class="{ failed: aiError }">
           <div class="agent-response-heading">
-            <span>✦</span> {{ agentServiceLabel }}
+            <span>✦</span> 推薦分析
             <em v-if="isExploring">正在即時推理台北活動、微氣候與捷運連通…</em>
           </div>
 
