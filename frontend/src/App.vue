@@ -3,7 +3,7 @@ import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { Loader } from '@googlemaps/js-api-loader'
 import { Badge, Button, Chip, Input, Progress, Snackbar } from '@varlet/ui'
 import { createEventDataSource } from './data/eventDataSource'
-import { toEventPlace } from './data/eventPresentation'
+import { SHADE_TIME_SCENARIOS, toEventPlace } from './data/eventPresentation'
 import { createAgentService } from './services/agentService'
 import { weatherService } from './services/weatherService'
 import { crowdService } from './services/crowdService'
@@ -46,6 +46,9 @@ const weather = ref({
   isMock: false,
 })
 const weatherLoading = ref(false)
+
+// Deterministic shade scenarios for hackathon acceptance testing
+const shadeTimePeriod = ref('morning')
 
 // User & Persona State (PRD 7.1)
 const personas = ref([])
@@ -93,6 +96,7 @@ const quickPrompts = ref([
 const quickTags = ref([])
 
 const places = ref([])
+const eventRecords = ref([])
 const eventDataSource = createEventDataSource()
 const eventSourceLabel = eventDataSource.label
 const agentService = createAgentService()
@@ -128,6 +132,9 @@ const avatarInitials = computed(() => {
 
 const selectedPlace = computed(() => places.value.find((place) => place.id === activePlaceId.value) ?? places.value[0])
 const detailPlace = computed(() => places.value.find((place) => place.id === detailPlaceId.value) ?? null)
+const activeShadeScenario = computed(() =>
+  SHADE_TIME_SCENARIOS.find((scenario) => scenario.id === shadeTimePeriod.value) ?? SHADE_TIME_SCENARIOS[0]
+)
 
 const bookmarkedPlaces = computed(() =>
   places.value.filter((p) => favoritePlaceIds.value.has(p.id))
@@ -251,6 +258,26 @@ async function loadQuickPrompts() {
   }
 }
 
+function rebuildPlaces() {
+  places.value = eventRecords.value.map((record, index) =>
+    toEventPlace(record, index, shadeTimePeriod.value)
+  )
+}
+
+async function selectShadeTimePeriod(period) {
+  if (period === shadeTimePeriod.value || !SHADE_TIME_SCENARIOS.some((scenario) => scenario.id === period)) return
+
+  const shouldRefreshRoute = Boolean(activeRoute.value)
+  const routePlaceId = detailPlaceId.value || activePlaceId.value
+  shadeTimePeriod.value = period
+  rebuildPlaces()
+
+  if (shouldRefreshRoute) {
+    const place = places.value.find((candidate) => candidate.id === routePlaceId)
+    if (place?.position) await planRouteToPlace(place)
+  }
+}
+
 async function loadEvents() {
   eventsLoading.value = true
   eventsError.value = ''
@@ -260,15 +287,16 @@ async function loadEvents() {
       crowdService.getVenuesStatus(),
     ])
     const crowdByVenue = new Map(venueStatuses.map((venue) => [venue.venue_id, venue]))
-    places.value = records.map((record, index) => {
+    eventRecords.value = records.map((record) => {
       const venueStatus = crowdByVenue.get(record.venueId)
-      return toEventPlace({
+      return {
         ...record,
         crowdScore: venueStatus?.crowd_score,
         // The current backend venue feed comes from MockDataSeeder.
         crowdIsMock: Boolean(venueStatus),
-      }, index)
+      }
     })
+    rebuildPlaces()
     activePlaceId.value = places.value[0]?.id ?? ''
     if (map.value) {
       markers.forEach((m) => m.overlay?.setMap(null))
@@ -488,6 +516,7 @@ async function planRouteToPlace(place) {
       destLng: place.position.lng,
       destName: place.name,
       prioritizeShade: true,
+      shadeTimePeriod: shadeTimePeriod.value,
     })
     if (!isCurrentRouteRequest()) return
 
@@ -1056,7 +1085,7 @@ onMounted(async () => {
         <div class="route-banner-icon">⌁</div>
         <div class="route-banner-info">
           <strong>{{ activeRoute.destination }}</strong>
-          <span>{{ activeRoute.transitSummary }} · SideQuest 遮蔭估算 {{ activeRoute.shadePercentage }}%</span>
+          <span>{{ activeRoute.transitSummary }} · {{ activeShadeScenario.label }}遮蔭情境 {{ activeRoute.shadePercentage }}%</span>
         </div>
         <button type="button" class="route-banner-close" aria-label="清除路線" @click="clearRoute">×</button>
       </div>
@@ -1098,6 +1127,29 @@ onMounted(async () => {
           @click="minimizeSheet"
         >⌄</button>
       </div>
+
+      <section v-if="!sheetMinimized" class="shade-scenario-panel" aria-labelledby="shade-scenario-title">
+        <div class="shade-scenario-copy">
+          <span class="shade-scenario-icon" aria-hidden="true">◒</span>
+          <div>
+            <strong id="shade-scenario-title">遮蔭驗收時段</strong>
+            <small>{{ activeShadeScenario.time }} · {{ activeShadeScenario.description }} · 固定情境資料</small>
+          </div>
+        </div>
+        <div class="shade-scenario-switch" role="group" aria-label="選擇遮蔭估算時段">
+          <button
+            v-for="scenario in SHADE_TIME_SCENARIOS"
+            :key="scenario.id"
+            type="button"
+            :class="{ active: shadeTimePeriod === scenario.id }"
+            :aria-pressed="shadeTimePeriod === scenario.id"
+            @click="selectShadeTimePeriod(scenario.id)"
+          >
+            <strong>{{ scenario.label }}</strong>
+            <small>{{ scenario.time }}</small>
+          </button>
+        </div>
+      </section>
 
       <!-- Activity Detail View -->
       <article v-if="detailPlace" class="place-detail-view">
@@ -1142,7 +1194,7 @@ onMounted(async () => {
         <div v-if="activeRoute" class="route-guidance-card">
           <div class="route-card-header">
             <div>
-              <span class="route-tag">{{ activeRoute.isGoogleRoute ? 'GOOGLE MAPS 智慧遮蔭' : '🛡️ 智慧抗熱遮蔭路徑' }}</span>
+              <span class="route-tag">{{ activeShadeScenario.label }} {{ activeRoute.isGoogleRoute ? 'GOOGLE MAPS 遮蔭情境' : '🛡️ 抗熱遮蔭情境' }}</span>
               <h3>{{ activeRoute.transitSummary }}</h3>
             </div>
             <div class="route-shade-badge">
