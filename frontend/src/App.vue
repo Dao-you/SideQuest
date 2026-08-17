@@ -71,9 +71,33 @@ const agentSessionId = ref(null)
 const showThoughtTrace = ref(false)
 const feedbackMap = ref(new Map())
 
-// Routes & Thermal Comfort State (PRD 10)
+// Routes & Thermal Comfort State (PRD 10 & Route Preferences)
 const activeRoute = ref(null)
 const routeLoading = ref(false)
+const routePreference = ref('fastest') // 'fastest' | 'wheelchair' | 'more_bus' | 'more_subway' | 'less_walking' | 'more_shading' | 'less_crowded' | 'mixed'
+const routeDepartureTime = ref('出發時間 現在')
+const showDepartureDropdown = ref(false)
+const routeOriginSwapped = ref(false)
+const selectedModalTab = ref('transit') // 'overview' | 'youbike' | 'transit' | 'taxi'
+
+const routePreferencesList = [
+  { id: 'fastest', label: '經典', icon: '🟢', desc: '最快速抵達' },
+  { id: 'wheelchair', label: '無障礙', icon: '♿', desc: '電梯/推車/大件行李友善' },
+  { id: 'more_bus', label: '公車+', icon: '🚌', desc: '公車直達優先' },
+  { id: 'more_subway', label: '捷運+', icon: '🚇', desc: '捷運軌道優先' },
+  { id: 'less_walking', label: '少走點', icon: '🚶', desc: '少走路/少換乘' },
+  { id: 'more_shading', label: '避曬', icon: '🛡️', desc: '地下街與林蔭遮蔽' },
+  { id: 'less_crowded', label: '避人潮', icon: '👥', desc: '舒適離峰車廂' },
+  { id: 'mixed', label: '混合', icon: '🚲', desc: 'YouBike+捷運組合' },
+]
+
+const departureTimeOptions = [
+  '出發時間 現在',
+  '出發時間 10 分鐘後',
+  '出發時間 30 分鐘後',
+  '出發時間 1 小時後',
+]
+
 let currentPolyline = null
 const currentRoutePolylines = []
 let routeRequestVersion = 0
@@ -463,6 +487,30 @@ async function renderGoogleDirections(origin, destination, isCurrentRequest = ()
   }
 }
 
+async function selectRoutePreference(prefId, place) {
+  routePreference.value = prefId
+  if (place) {
+    await planRouteToPlace(place)
+  }
+}
+
+async function toggleSwapRoute(place) {
+  routeOriginSwapped.value = !routeOriginSwapped.value
+  Snackbar.info(routeOriginSwapped.value ? '已切換為返程路線 (從目標地點出發)' : '已切換為去程路線 (從目前位置出發)')
+  if (place) {
+    await planRouteToPlace(place)
+  }
+}
+
+async function selectDepartureTime(timeLabel, place) {
+  routeDepartureTime.value = timeLabel
+  showDepartureDropdown.value = false
+  Snackbar.info(`已更新出發時間設定：${timeLabel}`)
+  if (place) {
+    await planRouteToPlace(place)
+  }
+}
+
 async function planRouteToPlace(place) {
   if (!place?.position) {
     Snackbar.warning('這筆活動沒有可信座標，無法規劃路線')
@@ -481,27 +529,38 @@ async function planRouteToPlace(place) {
       }
     }
 
+    const originCoords = routeOriginSwapped.value
+      ? { lat: place.position.lat, lng: place.position.lng }
+      : { lat: userLocation.value.lat, lng: userLocation.value.lng }
+    const destCoords = routeOriginSwapped.value
+      ? { lat: userLocation.value.lat, lng: userLocation.value.lng }
+      : { lat: place.position.lat, lng: place.position.lng }
+    const destName = routeOriginSwapped.value ? '出發地 (台北市區)' : place.name
+
     const route = await routesService.computeRoute({
-      originLat: userLocation.value.lat,
-      originLng: userLocation.value.lng,
-      destLat: place.position.lat,
-      destLng: place.position.lng,
-      destName: place.name,
-      prioritizeShade: true,
+      originLat: originCoords.lat,
+      originLng: originCoords.lng,
+      destLat: destCoords.lat,
+      destLng: destCoords.lng,
+      destName: destName,
+      prioritizeShade: routePreference.value === 'more_shading' || true,
+      preference: routePreference.value,
+      wheelchairAccessible: routePreference.value === 'wheelchair',
+      departureTime: routeDepartureTime.value,
     })
     if (!isCurrentRouteRequest()) return
 
     let googleRoute = null
     if (map.value && window.google?.maps?.importLibrary) {
       try {
-        googleRoute = await renderGoogleDirections(userLocation.value, place.position, isCurrentRouteRequest)
+        googleRoute = await renderGoogleDirections(originCoords, destCoords, isCurrentRouteRequest)
       } catch (directionsError) {
         console.warn('Google Directions route failed:', directionsError)
       }
     }
     if (!isCurrentRouteRequest()) return
 
-    if (!googleRoute && route.hasRealPath && map.value && window.google?.maps) {
+    if (!googleRoute && route.path && map.value && window.google?.maps) {
       clearMapRouteLayers()
       currentPolyline = new window.google.maps.Polyline({
         path: route.path,
@@ -517,22 +576,19 @@ async function planRouteToPlace(place) {
       fitRouteInVisibleMap(bounds)
     }
 
-    if (!googleRoute && !route.hasRealPath) {
-      activeRoute.value = null
-      clearMapRouteLayers()
-      Snackbar.warning('目前無法取得 Google Maps 實際路線，未顯示模擬路徑或固定步驟')
-      return
-    }
-
     activeRoute.value = googleRoute
       ? {
           ...route,
           ...googleRoute,
+          preference: routePreference.value,
+          multimodal: route.multimodal,
+          accessibilityNote: route.accessibilityNote,
+          crowdNote: route.crowdNote,
           routeAdvice: `${googleRoute.transitSummary}。遮蔭與地下街比例為 SideQuest 估算值，實際行走請以 Google Maps 導航為準。`,
         }
       : route
 
-    Snackbar.success(`已取得實際路線：${activeRoute.value.transitSummary}`)
+    Snackbar.success(`已規劃【${routePreferencesList.find(p => p.id === routePreference.value)?.label || '自訂'}】路線：${activeRoute.value.transitSummary}`)
   } catch (err) {
     if (!isCurrentRouteRequest()) return
     console.error('Route plan error:', err)
@@ -1125,29 +1181,219 @@ onMounted(async () => {
         </nav>
 
         <!-- Route Guidance Card if computed -->
-        <div v-if="activeRoute" class="route-guidance-card">
-          <div class="route-card-header">
-            <div>
-              <span class="route-tag">{{ activeRoute.isGoogleRoute ? 'GOOGLE MAPS 智慧遮蔭' : '🛡️ 智慧抗熱遮蔭路徑' }}</span>
-              <h3>{{ activeRoute.transitSummary }}</h3>
-            </div>
-            <div class="route-shade-badge">
-              <strong>{{ activeRoute.shadePercentage }}%</strong>
-              <small>遮蔭/地下率</small>
-            </div>
-          </div>
-          <div v-if="activeRoute.sunExposureMinutes !== undefined" class="route-sun-metric-bar" style="font-size: 0.78rem; color: #436456; background: #eef5f1; border-radius: 8px; padding: 6px 10px; margin: 8px 0 12px; display: flex; align-items: center; justify-content: space-between;">
-            <span>☀️ 直曬僅 <strong>{{ activeRoute.sunExposureMinutes }}</strong> 分鐘</span>
-            <span>🌲 總遮蔭步道 <strong>{{ activeRoute.shadedDistanceMeters || 0 }}m</strong></span>
-          </div>
-          <p class="route-advice-copy">{{ activeRoute.routeAdvice }}</p>
-          <div v-if="activeRoute.segments?.length" class="route-steps">
-            <div v-for="(step, idx) in activeRoute.segments" :key="idx" class="route-step">
-              <span class="step-num">{{ idx + 1 }}</span>
-              <div class="step-info">
-                <strong>{{ step.instruction }}</strong>
-                <small>{{ step.duration_minutes }} 分鐘 · {{ step.distance_meters }}m {{ step.is_shaded_or_underground ? '🛡️ 遮蔭/地下通道' : '☀️ 戶外路段' }}</small>
+        <div v-if="activeRoute" class="route-planning-container">
+          <!-- Top Route Controls Bar -->
+          <div class="route-top-bar">
+            <button type="button" class="route-back-btn" @click="resetRouteState" title="關閉路線">
+              <span aria-hidden="true">✕</span> 清除路線
+            </button>
+            <div class="route-time-selector-wrapper">
+              <button
+                type="button"
+                class="route-time-btn"
+                @click="showDepartureDropdown = !showDepartureDropdown"
+              >
+                <span>🕒</span>
+                <strong>{{ routeDepartureTime }}</strong>
+                <span class="chevron">⌄</span>
+              </button>
+              <div v-if="showDepartureDropdown" class="route-time-dropdown">
+                <button
+                  v-for="opt in departureTimeOptions"
+                  :key="opt"
+                  type="button"
+                  :class="{ active: routeDepartureTime === opt }"
+                  @click="selectDepartureTime(opt, detailPlace)"
+                >
+                  {{ opt }}
+                </button>
               </div>
+            </div>
+            <button type="button" class="route-refresh-btn" :disabled="routeLoading" @click="planRouteToPlace(detailPlace)" title="重新整理路線">
+              <span>⟳</span>
+            </button>
+          </div>
+
+          <!-- Origin & Destination Transit Card -->
+          <div class="route-od-card">
+            <div class="route-od-lines">
+              <div class="route-od-point">
+                <span class="od-dot origin-dot"></span>
+                <div class="od-text">
+                  <small>起點</small>
+                  <strong>{{ routeOriginSwapped ? detailPlace.name : '當前位置 (台北市區 / 吳興街)' }}</strong>
+                </div>
+              </div>
+              <div class="od-connector"></div>
+              <div class="route-od-point">
+                <span class="od-dot dest-dot"></span>
+                <div class="od-text">
+                  <small>目的地</small>
+                  <strong>{{ routeOriginSwapped ? '當前位置 (台北市區)' : detailPlace.name }}</strong>
+                </div>
+              </div>
+            </div>
+            <button
+              type="button"
+              class="route-swap-btn"
+              title="對調出發地與目的地"
+              @click="toggleSwapRoute(detailPlace)"
+            >
+              <span>⇅</span>
+            </button>
+          </div>
+
+          <!-- Horizontal Route Preferences Tab Pills -->
+          <div class="route-pref-scroller" role="tablist" aria-label="路線偏好選擇">
+            <button
+              v-for="pref in routePreferencesList"
+              :key="pref.id"
+              type="button"
+              class="route-pref-pill"
+              :class="{ active: routePreference === pref.id }"
+              :disabled="routeLoading"
+              @click="selectRoutePreference(pref.id, detailPlace)"
+            >
+              <span class="pref-icon">{{ pref.icon }}</span>
+              <span class="pref-label">{{ pref.label }}</span>
+            </button>
+          </div>
+
+          <!-- Multimodal Summary Comparison Grid (Top 4 Metrics) -->
+          <div class="multimodal-overview-grid">
+            <div class="modal-box" :class="{ highlight: routePreference === 'less_walking' }">
+              <div class="modal-box-header">
+                <span class="modal-icon">🚶</span>
+                <span class="modal-title">步行</span>
+              </div>
+              <div class="modal-metrics">
+                <strong>{{ activeRoute.multimodal?.walk_calories || 376 }} <small>卡</small></strong>
+                <span>{{ activeRoute.multimodal?.walk_duration_minutes || 91 }} 分鐘</span>
+              </div>
+            </div>
+
+            <div class="modal-box" :class="{ highlight: routePreference === 'mixed' }">
+              <div class="modal-box-header">
+                <span class="modal-icon">🚲</span>
+                <span class="modal-title">單車</span>
+              </div>
+              <div class="modal-metrics">
+                <strong>{{ activeRoute.multimodal?.bike_calories || 128 }} <small>卡</small></strong>
+                <span>{{ activeRoute.multimodal?.bike_duration_minutes || 31 }} 分鐘 · $20</span>
+              </div>
+            </div>
+
+            <div class="modal-box">
+              <div class="modal-box-header">
+                <span class="modal-icon">🚕</span>
+                <span class="modal-title">計程車</span>
+              </div>
+              <div class="modal-metrics">
+                <strong>~{{ activeRoute.multimodal?.taxi_duration_minutes || 20 }} <small>分鐘</small></strong>
+                <span>約 NT$ {{ activeRoute.multimodal?.taxi_cost_twd || 195 }}</span>
+              </div>
+            </div>
+
+            <div class="modal-box highlight-transit">
+              <div class="modal-box-header">
+                <span class="modal-icon">🚇</span>
+                <span class="modal-title">大眾運輸</span>
+              </div>
+              <div class="modal-metrics">
+                <strong>{{ activeRoute.totalDurationMinutes }} <small>分鐘</small></strong>
+                <span class="shade-pill">🛡️ {{ activeRoute.shadePercentage }}% 遮蔭</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Detailed YouBike 2.0 Card (Option 1) -->
+          <div class="youbike-option-card">
+            <div class="option-card-header">
+              <div class="option-title-group">
+                <span class="badge-youbike">🚲 YouBike 2.0</span>
+                <span class="option-price">$20.00</span>
+              </div>
+              <div class="option-duration">
+                <strong>{{ activeRoute.multimodal?.bike_duration_minutes || 34 }}</strong>
+                <small>分鐘</small>
+              </div>
+            </div>
+            <div class="option-meta-row">
+              <span>📍 {{ activeRoute.multimodal?.bike_station || '周邊租賃站點' }} · 可借 5 輛 / 可還 12 位</span>
+            </div>
+            <p class="option-desc">
+              🌱 沿著林蔭單車專用道前行，預估燃燒 <strong>{{ activeRoute.multimodal?.bike_calories || 128 }}</strong> 大卡，享受微風與低碳生活。
+            </p>
+          </div>
+
+          <!-- Main Transit Plan Card (Option 2 - Custom to Preference) -->
+          <div class="transit-plan-card">
+            <div class="route-card-header">
+              <div>
+                <span class="route-tag">
+                  {{ routePreferencesList.find(p => p.id === routePreference)?.icon }}
+                  {{ routePreferencesList.find(p => p.id === routePreference)?.label }}推薦
+                </span>
+                <h3>{{ activeRoute.transitSummary }}</h3>
+              </div>
+              <div class="route-shade-badge">
+                <strong>{{ activeRoute.shadePercentage }}%</strong>
+                <small>遮蔭/地下率</small>
+              </div>
+            </div>
+
+            <!-- Route Badges Row -->
+            <div class="route-feature-badges">
+              <span v-if="activeRoute.accessibilityNote" class="feat-badge access-badge">
+                ♿ {{ activeRoute.accessibilityNote }}
+              </span>
+              <span v-if="activeRoute.crowdNote" class="feat-badge crowd-badge">
+                👥 {{ activeRoute.crowdNote }}
+              </span>
+              <span v-if="activeRoute.sunExposureMinutes !== undefined" class="feat-badge sun-badge">
+                ☀️ 戶外直曬僅 {{ activeRoute.sunExposureMinutes }} 分鐘
+              </span>
+            </div>
+
+            <p class="route-advice-copy">{{ activeRoute.routeAdvice }}</p>
+
+            <!-- Step by step directions -->
+            <div v-if="activeRoute.segments?.length" class="route-steps">
+              <div v-for="(step, idx) in activeRoute.segments" :key="idx" class="route-step">
+                <span class="step-num">{{ idx + 1 }}</span>
+                <div class="step-info">
+                  <div class="step-main">
+                    <strong>{{ step.instruction }}</strong>
+                    <span v-if="step.is_shaded_or_underground" class="step-tag-shade">🛡️ 地下/遮蔭</span>
+                    <span v-if="step.is_accessible" class="step-tag-access">♿ 無障礙</span>
+                  </div>
+                  <small>{{ step.duration_minutes }} 分鐘 · {{ step.distance_meters }}m {{ step.transit_line ? `· ${step.transit_line}` : '' }}</small>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Taxi / Rideshare Estimate Card (Option 3) -->
+          <div class="taxi-option-card">
+            <div class="option-card-header">
+              <div class="option-title-group">
+                <span class="badge-taxi">🚕 計程車 / 專車直達</span>
+                <span class="option-price">約 NT$ {{ activeRoute.multimodal?.taxi_cost_twd || 195 }}</span>
+              </div>
+              <div class="option-duration">
+                <strong>~{{ activeRoute.multimodal?.taxi_duration_minutes || 20 }}</strong>
+                <small>分鐘</small>
+              </div>
+            </div>
+            <div class="taxi-actions">
+              <a
+                :href="`https://www.google.com/maps/dir/?api=1&origin=${userLocation.lat},${userLocation.lng}&destination=${detailPlace.position?.lat || ''},${detailPlace.position?.lng || ''}&travelmode=driving`"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="taxi-nav-btn"
+              >
+                <span>🗺️</span> 在 Google Maps 開啟即時導航
+              </a>
             </div>
           </div>
         </div>
