@@ -1703,16 +1703,8 @@ onMounted(async () => {
             <span class="status-dot"></span> 台北市 <span class="caret">⌄</span>
           </button>
           <button
-            type="button"
-            class="topbar-demo-login-btn"
-            @click="showPersonaModal = true"
-            title="點選模擬登入 / 切換 Demo 帳號"
-          >
-            <span>👤 模擬登入</span>
-          </button>
-          <button
             class="avatar-button"
-            :title="`目前帳號：${activePersona.name} (點擊切換 Demo 角色)`"
+            :title="`目前帳號：${activePersona.name}（點擊切換）`"
             aria-label="切換帳號或偏好"
             @click="showPersonaModal = true"
           >
@@ -1852,8 +1844,8 @@ onMounted(async () => {
             <span aria-hidden="true">{{ favoritePlaceIds.has(detailPlace.id) ? '♥' : '♡' }}</span>
             <strong>{{ favoritePlaceIds.has(detailPlace.id) ? '已收藏' : '收藏' }}</strong>
           </button>
-          <button type="button" class="btn-sim-alert" @click="triggerSimulateConditionChange(detailPlace)" title="模擬天候驟變與人潮暴增之備案">
-            <span aria-hidden="true">🚨</span><strong>模擬備案</strong>
+          <button type="button" class="btn-sim-alert" @click="triggerSimulateConditionChange(detailPlace)" title="測試天候驟變與人潮變化">
+            <span aria-hidden="true">🚨</span><strong>測試突發狀況</strong>
           </button>
           <button type="button" @click="openGoogleMapsNavigation(detailPlace)">
             <span aria-hidden="true">🗺️</span><strong>Google導航</strong>
@@ -2138,7 +2130,7 @@ onMounted(async () => {
               <div class="profile-name-row">
                 <h2>{{ activePersona.name }}</h2>
                 <span class="profile-role-badge">
-                  {{ activePersona.description || 'Demo 探索者' }}
+                  {{ activePersona.description || '週末探索者' }}
                 </span>
               </div>
               <p class="profile-email">
@@ -2150,7 +2142,7 @@ onMounted(async () => {
 
           <div class="profile-persona-switch-bar">
             <div class="switch-label-row">
-              <span class="switch-label">🎭 切換 Demo 模擬角色：</span>
+              <span class="switch-label">切換探索偏好：</span>
               <button type="button" class="btn-open-persona-modal" @click="showPersonaModal = true">
                 查看角色詳情 ↗
               </button>
@@ -2180,7 +2172,7 @@ onMounted(async () => {
                 <small>自動即時比對 Google Calendar 時程，避免重複排程或撞期</small>
               </div>
             </div>
-            <span class="gcal-connected-tag">🟢 API 已連線</span>
+            <span class="gcal-connected-tag">🟢 日曆已連線</span>
           </div>
 
           <div class="gcal-settings-row">
@@ -2222,8 +2214,8 @@ onMounted(async () => {
             <div class="title-left">
               <span class="pref-icon">⚙️</span>
               <div>
-                <h3>個人探索偏好設定 (Preferences)</h3>
-                <small>自訂室內冷氣、人潮容忍度、預算及遮蔭偏好，Agent 將以此量身推薦</small>
+                <h3>個人探索偏好</h3>
+                <small>自訂室內、人潮、預算與遮蔭偏好，讓推薦更貼近你的需求</small>
               </div>
             </div>
           </div>
@@ -2370,7 +2362,7 @@ onMounted(async () => {
                 🔗 分享卡片
               </button>
               <button type="button" class="btn-plan-action" @click="triggerSimulateConditionChange(activePlannedPlace)">
-                🚨 模擬突發狀況
+                🚨 查看突發備案
               </button>
             </div>
           </div>
@@ -2400,8 +2392,8 @@ onMounted(async () => {
             <p class="active-plan-meta">{{ activePlannedPlace.address }} · {{ activePlannedPlace.dateRange }} · 人流 {{ crowdLabel(activePlannedPlace.crowd) }}</p>
           </div>
           <div class="active-plan-btns">
-            <button type="button" class="plan-btn plan-btn-alert" @click="triggerSimulateConditionChange(activePlannedPlace)" title="模擬午後雷雨或人潮暴增警報">
-              🚨 模擬突發變更
+            <button type="button" class="plan-btn plan-btn-alert" @click="triggerSimulateConditionChange(activePlannedPlace)" title="測試午後雷雨或人潮變化">
+              🚨 查看突發備案
             </button>
             <button type="button" class="plan-btn" @click="openShareModal(activePlannedPlace)">
               🔗 分享
@@ -2680,7 +2672,7 @@ onMounted(async () => {
                 </span>
                 <span class="metric"><i class="metric-icon time-icon">◷</i> {{ place.time }}</span>
               </div>
-              <div v-if="Number.isFinite(place.crowd)" class="crowd-progress" :title="place.crowdIsMock ? 'MVP 模擬人流資料' : '人流資料'">
+              <div v-if="Number.isFinite(place.crowd)" class="crowd-progress" :title="place.crowdIsMock ? '目前為估算人流' : '人流資料'">
                 <Progress :value="place.crowd" :color="place.color" track-color="#edece7" :height="4" />
               </div>
 
@@ -2787,7 +2779,7 @@ onMounted(async () => {
           </div>
           <div class="alt-vs-badge">VS</div>
           <div class="alt-card recommended">
-            <span class="alt-card-kicker recommended-kicker">✨ AGENT 推薦室內備案</span>
+            <span class="alt-card-kicker recommended-kicker">✨ 室內替代方案</span>
             <h3>{{ alternativePlanData.alternative?.name }}</h3>
             <div class="alt-card-metrics">
               <span class="metric-good">❄️ 室內 0% 曝曬/完全防雨</span>
@@ -2926,7 +2918,7 @@ onMounted(async () => {
             🚇 建議交通：{{ shareTargetPlace.transit_summary || '捷運大眾運輸直達' }}
           </div>
           <div class="share-card-footer">
-            <small>✨ 由 SideQuest 智慧城市 Agent 規劃生成</small>
+            <small>✨ 由 SideQuest 智慧助理規劃生成</small>
           </div>
         </div>
 
@@ -2949,7 +2941,7 @@ onMounted(async () => {
       <div class="sidequest-modal feedback-modal">
         <header class="sidequest-modal-header">
           <div>
-            <span>AGENT FEEDBACK · STEP 16</span>
+            <span>活動回饋</span>
             <h2>活動與推薦意見回饋</h2>
           </div>
           <button type="button" class="modal-close-btn" @click="showFeedbackModal = false">×</button>
@@ -2963,7 +2955,7 @@ onMounted(async () => {
             :class="{ active: feedbackRating === true }"
             @click="feedbackRating = true"
           >
-            👍 符合期待 / 體驗良好
+            符合期待 / 體驗良好
           </button>
           <button
             type="button"
@@ -2971,7 +2963,7 @@ onMounted(async () => {
             :class="{ active: feedbackRating === false }"
             @click="feedbackRating = false"
           >
-            👎 不太符合 / 需改進
+            不太符合 / 需要調整
           </button>
         </div>
 
@@ -2999,7 +2991,7 @@ onMounted(async () => {
       </div>
     </div>
 
-    <!-- Persona Switcher & Demo Login Modal (PRD 7.1) -->
+    <!-- Persona Switcher Modal -->
     <div v-if="showPersonaModal" class="persona-modal-overlay" @click.self="showPersonaModal = false">
       <div class="persona-modal">
         <header class="persona-modal-header">
