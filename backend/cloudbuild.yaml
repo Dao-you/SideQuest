@@ -15,7 +15,7 @@ steps:
     args:
       - 'build'
       - '-t'
-      - '${_LOCATION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/${_IMAGE_NAME}:${BUILD_ID}'
+      - '${_LOCATION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/${_IMAGE_NAME}:${SHORT_SHA}'
       - '-t'
       - '${_LOCATION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/${_IMAGE_NAME}:latest'
       - '.'
@@ -37,7 +37,7 @@ steps:
       - 'deploy'
       - '${_SERVICE_NAME}'
       - '--image'
-      - '${_LOCATION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/${_IMAGE_NAME}:${BUILD_ID}'
+      - '${_LOCATION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/${_IMAGE_NAME}:${SHORT_SHA}'
       - '--region'
       - '${_LOCATION}'
       - '--platform'
@@ -63,7 +63,7 @@ substitutions:
   _SERVICE_NAME: 'sidequest-backend'
 
 images:
-  - '${_LOCATION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/${_IMAGE_NAME}:${BUILD_ID}'
+  - '${_LOCATION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/${_IMAGE_NAME}:${SHORT_SHA}'
   - '${_LOCATION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/${_IMAGE_NAME}:latest'
 
 options:
