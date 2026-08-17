@@ -3,7 +3,36 @@
  * Supports standard JSON REST calls and Server-Sent Events (SSE) streaming.
  */
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api/v1'
+const API_BASE_URL = import.meta.env?.VITE_API_BASE_URL || '/api/v1'
+
+export function parseSSEMessage(message) {
+  if (!message.trim()) return null
+
+  let eventName = 'message'
+  const dataLines = []
+
+  for (const line of message.split(/\r?\n/)) {
+    if (line.startsWith('event:')) {
+      eventName = line.slice(6).trim()
+    } else if (line.startsWith('data:')) {
+      dataLines.push(line.slice(5).replace(/^ /, ''))
+    }
+  }
+
+  if (dataLines.length === 0) return null
+
+  const dataStr = dataLines.join('\n')
+  try {
+    return { eventName, data: JSON.parse(dataStr) }
+  } catch {
+    return { eventName, data: dataStr }
+  }
+}
+
+export function splitSSEMessages(buffer) {
+  const messages = buffer.split(/\r?\n\r?\n/)
+  return { messages: messages.slice(0, -1), remainder: messages.at(-1) || '' }
+}
 
 export class ApiClient {
   constructor(baseUrl = API_BASE_URL) {
@@ -68,42 +97,32 @@ export class ApiClient {
           throw new Error(`SSE stream failed: ${response.status}`)
         }
 
+        if (!response.body) {
+          throw new Error('SSE stream response has no readable body')
+        }
+
         const reader = response.body.getReader()
         const decoder = new TextDecoder('utf-8')
         let buffer = ''
+
+        const dispatchMessage = (message) => {
+          const parsed = parseSSEMessage(message)
+          if (parsed) onEvent?.(parsed.eventName, parsed.data)
+        }
 
         while (true) {
           const { done, value } = await reader.read()
           if (done) break
 
           buffer += decoder.decode(value, { stream: true })
-          const lines = buffer.split('\n\n')
-          buffer = lines.pop() || ''
-
-          for (const message of lines) {
-            if (!message.trim()) continue
-            let eventName = 'message'
-            let dataStr = ''
-
-            const msgLines = message.split('\n')
-            for (const line of msgLines) {
-              if (line.startsWith('event:')) {
-                eventName = line.slice(6).trim()
-              } else if (line.startsWith('data:')) {
-                dataStr += line.slice(5).trim()
-              }
-            }
-
-            if (dataStr) {
-              try {
-                const parsedData = JSON.parse(dataStr)
-                onEvent?.(eventName, parsedData)
-              } catch {
-                onEvent?.(eventName, dataStr)
-              }
-            }
-          }
+          const split = splitSSEMessages(buffer)
+          const messages = split.messages
+          buffer = split.remainder
+          messages.forEach(dispatchMessage)
         }
+
+        buffer += decoder.decode()
+        if (buffer.trim()) dispatchMessage(buffer)
 
         onDone?.()
       } catch (err) {

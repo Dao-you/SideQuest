@@ -1,5 +1,5 @@
 /**
- * Agent Interaction Service (Gemini 3.7 Flash Agent with SSE Reasoning Trace & Multi-Criteria Ranking).
+ * Agent Interaction Service with SSE reasoning trace and multi-criteria ranking.
  */
 import { apiClient } from './apiClient'
 
@@ -132,7 +132,7 @@ export class MockAgentService {
 }
 
 export class HttpAgentService {
-  label = 'GEMINI 3.7 FLASH'
+  label = 'SIDEQUEST RULE AGENT'
   fallbackMock = new MockAgentService()
 
   /**
@@ -206,7 +206,7 @@ export class HttpAgentService {
             } else if (type === 'understanding') {
               parsedCriteria = data
             } else if (type === 'markdown_chunk') {
-              accumulatedReply += data.text || ''
+              accumulatedReply += data.chunk || data.text || ''
             } else if (type === 'recommendation_cards') {
               recommendationCards = data.cards || []
               dispersalSummary = data.dispersal_summary || ''

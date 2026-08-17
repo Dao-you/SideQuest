@@ -7,7 +7,7 @@ steps:
       - --build-arg
       - VITE_GOOGLE_MAPS_API_KEY=${_MAPS_API_KEY}
       - --build-arg
-      - VITE_AGENT_API_URL=${_AGENT_API_URL}
+      - VITE_API_BASE_URL=${_API_BASE_URL}
       - --build-arg
       - VITE_EVENT_SOURCE=${_EVENT_SOURCE}
       - --build-arg
@@ -19,8 +19,8 @@ substitutions:
   _REGION: asia-east1
   _REPOSITORY: sidequest
   _MAPS_API_KEY: ""
-  _AGENT_API_URL: ""
-  _EVENT_SOURCE: csv
-  _AGENT_SOURCE: mock
+  _API_BASE_URL: /api/v1
+  _EVENT_SOURCE: api
+  _AGENT_SOURCE: agent
 options:
   logging: CLOUD_LOGGING_ONLY

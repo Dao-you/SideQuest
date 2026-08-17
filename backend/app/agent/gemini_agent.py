@@ -403,7 +403,10 @@ class GeminiAgent:
         # Yield structured recommendation cards (PRD 7.4)
         yield SSEEvent(
             event=SSEEventType.RECOMMENDATION_CARDS,
-            data={"cards": [c.model_dump() for c in top_3_cards]},
+            data={
+                "cards": [c.model_dump() for c in top_3_cards],
+                "dispersal_summary": "已依即時天氣與目前可用的人流資料完成分流排序。",
+            },
         )
         await asyncio.sleep(0.05)
 
@@ -416,6 +419,7 @@ class GeminiAgent:
                 "session_id": session_id,
                 "total_steps": len(thought_steps),
                 "execution_time_ms": elapsed_ms,
+                "one_sentence_summary": delta_summary,
             },
         )
 

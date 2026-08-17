@@ -97,6 +97,7 @@ export class RoutesService {
         routeAdvice: result.route_advice,
         segments: result.segments || [],
         path: decodedPath,
+        hasRealPath: Boolean(result.encoded_polyline),
       }
     } catch (err) {
       console.warn('Routes compute API failed, generating smart fallback route:', err)
@@ -119,6 +120,7 @@ export class RoutesService {
           { lat: (originLat * 0.5 + destLat * 0.5), lng: (originLng * 0.5 + destLng * 0.5) },
           { lat: destLat, lng: destLng },
         ],
+        hasRealPath: false,
       }
     }
   }

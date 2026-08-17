@@ -89,6 +89,7 @@ function recordFromApiEvent(event, index) {
 
   return {
     id: String(event.id || `api-event-${index + 1}`),
+    venueId: String(event.venue_id || ''),
     title: event.title || `台北活動 ${index + 1}`,
     category: categoryLabel,
     rawCategory: rawCat,

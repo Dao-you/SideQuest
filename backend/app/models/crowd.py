@@ -38,10 +38,11 @@ class VenueLiveStatus(BaseModel):
 
 
 class HeatmapPoint(BaseModel):
-    """Point model for rendering Google Maps JavaScript API HeatmapLayer."""
+    """Point model for rendering a crowd intensity overlay."""
     latitude: float
     longitude: float
     weight: float = Field(..., ge=0.0, le=1.0, description="Intensity weight for heatmap")
     venue_name: str
     crowd_score: int
     crowd_level: CrowdLevel
+    data_source: str = Field(default="mock_seed", description="Origin of the crowd measurement")

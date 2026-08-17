@@ -41,6 +41,37 @@ class RealEventFetcher:
         {"name": "北門站 (G13)", "lat": 25.0494, "lng": 121.5105},
     ]
 
+    @staticmethod
+    def _is_taipei_location(show_info: dict) -> bool:
+        """Return whether a schedule entry explicitly belongs to Taipei City."""
+        location_text = f"{show_info.get('locationName', '')} {show_info.get('location', '')}"
+        return "臺北" in location_text or "台北" in location_text
+
+    @staticmethod
+    def _parse_taipei_coordinates(show_info: dict) -> Optional[tuple[float, float]]:
+        """Parse coordinates and reject missing/default/out-of-city points."""
+        try:
+            lat = float(show_info.get("latitude"))
+            lng = float(show_info.get("longitude"))
+        except (TypeError, ValueError):
+            return None
+
+        # Broad Taipei bounds, including border venues near New Taipei City.
+        if not (24.90 <= lat <= 25.25 and 121.35 <= lng <= 121.75):
+            return None
+        return lat, lng
+
+    def _select_taipei_show_info(self, show: dict) -> Optional[tuple[dict, float, float]]:
+        """Select the Taipei schedule entry instead of blindly using showInfo[0]."""
+        for show_info in show.get("showInfo", []):
+            if not self._is_taipei_location(show_info):
+                continue
+            coordinates = self._parse_taipei_coordinates(show_info)
+            if coordinates is None:
+                continue
+            return show_info, coordinates[0], coordinates[1]
+        return None
+
     def _find_nearest_mrt(self, lat: float, lng: float) -> tuple[str, int]:
         """Find the closest MRT station and approximate walking distance in meters."""
         closest_name = "捷運站 (步行可達)"
@@ -77,30 +108,21 @@ class RealEventFetcher:
             if not isinstance(shows, list):
                 return []
 
-            tpe_shows = [
-                s for s in shows
-                if any(
-                    "臺北" in loc.get("locationName", "")
-                    or "台北" in loc.get("locationName", "")
-                    or "臺北" in loc.get("location", "")
-                    or "台北" in loc.get("location", "")
-                    for loc in s.get("showInfo", [])
-                )
-            ][:limit_per_category]
+            tpe_shows = []
+            for show in shows:
+                selected = self._select_taipei_show_info(show)
+                if selected is None:
+                    continue
+                tpe_shows.append((show, *selected))
+                if len(tpe_shows) >= limit_per_category:
+                    break
 
-            for s in tpe_shows:
-                show_info = s.get("showInfo", [{}])[0]
+            for s, show_info, lat, lng in tpe_shows:
                 venue_name = show_info.get("locationName") or "台北藝文場館"
                 address = show_info.get("location") or "台北市"
                 
                 district_match = re.search(r"(中正區|信義區|大安區|大同區|中山區|南港區|士林區|萬華區|松山區|內湖區|北投區|文山區)", address)
                 district = district_match.group(1) if district_match else "台北市"
-
-                try:
-                    lat = float(show_info.get("latitude", 25.0441))
-                    lng = float(show_info.get("longitude", 121.5329))
-                except (ValueError, TypeError):
-                    lat, lng = 25.0441, 121.5329
 
                 mrt_station, mrt_distance = self._find_nearest_mrt(lat, lng)
 

@@ -11,11 +11,15 @@ import { routesService } from './services/routesService'
 import { userService } from './services/userService'
 
 const MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY
+const TAIPEI_CENTER = { lat: 25.0478, lng: 121.5170 }
 const mapElement = ref(null)
 const sheetElement = ref(null)
 const mapState = ref('loading')
 const mapError = ref('')
 const map = ref(null)
+const userLocation = ref({ ...TAIPEI_CENTER })
+const hasUserLocation = ref(false)
+const locationState = ref('idle')
 const activeFilter = ref('為你推薦')
 const activePlaceId = ref('')
 const prompt = ref('')
@@ -69,10 +73,13 @@ const feedbackMap = ref(new Map())
 const activeRoute = ref(null)
 const routeLoading = ref(false)
 let currentPolyline = null
+let currentDirectionsRenderer = null
+let userLocationOverlay = null
 
 // Heatmap State (PRD 8)
 const heatmapVisible = ref(false)
-let heatmapLayer = null
+const heatmapOverlays = []
+const heatmapIsMock = ref(true)
 
 // Quick Prompts State (PRD 7.2)
 const quickPrompts = ref([
@@ -129,10 +136,12 @@ const visiblePlaces = computed(() => {
     return bookmarkedPlaces.value
   }
   if (activeFilter.value === '低人流') {
-    return [...places.value].sort((a, b) => a.crowd - b.crowd)
+    return places.value
+      .filter((place) => Number.isFinite(place.crowd))
+      .sort((a, b) => a.crowd - b.crowd)
   }
   if (activeFilter.value === '室內避暑') {
-    return places.value.filter((place) => place.isIndoor || place.sun < 40)
+    return places.value.filter((place) => place.isIndoor)
   }
   if (activeFilter.value === '免費入場') {
     return places.value.filter((place) => place.fee.includes('免費'))
@@ -145,12 +154,14 @@ const visiblePlaces = computed(() => {
 })
 
 function crowdLabel(score) {
+  if (!Number.isFinite(score)) return '暫無人流資料'
   if (score < 35) return '舒適少人'
   if (score < 65) return '人流適中'
   return '人潮偏多'
 }
 
 function crowdClass(score) {
+  if (!Number.isFinite(score)) return 'unknown'
   if (score < 35) return 'good'
   if (score < 65) return 'medium'
   return 'busy'
@@ -159,7 +170,7 @@ function crowdClass(score) {
 async function loadWeather() {
   weatherLoading.value = true
   try {
-    const data = await weatherService.getCurrentWeather(25.0330, 121.5654)
+    const data = await weatherService.getCurrentWeather(userLocation.value.lat, userLocation.value.lng)
     weather.value = data
   } catch (err) {
     console.error('Weather load error:', err)
@@ -242,13 +253,25 @@ async function loadEvents() {
   eventsLoading.value = true
   eventsError.value = ''
   try {
-    const records = await eventDataSource.list()
-    places.value = records.map(toEventPlace)
+    const [records, venueStatuses] = await Promise.all([
+      eventDataSource.list(),
+      crowdService.getVenuesStatus(),
+    ])
+    const crowdByVenue = new Map(venueStatuses.map((venue) => [venue.venue_id, venue]))
+    places.value = records.map((record, index) => {
+      const venueStatus = crowdByVenue.get(record.venueId)
+      return toEventPlace({
+        ...record,
+        crowdScore: venueStatus?.crowd_score,
+        // The current backend venue feed comes from MockDataSeeder.
+        crowdIsMock: Boolean(venueStatus),
+      }, index)
+    })
     activePlaceId.value = places.value[0]?.id ?? ''
     if (map.value) {
       markers.forEach((m) => m.overlay?.setMap(null))
       markers.clear()
-      places.value.forEach(addMarker)
+      places.value.filter((place) => place.position).forEach(addMarker)
       syncMarkerSelection()
     }
   } catch (error) {
@@ -303,7 +326,7 @@ function selectPlace(place) {
   if (!place) return
   activePlaceId.value = place.id
   const marker = markers.get(place.id)
-  if (marker && map.value) {
+  if (marker && map.value && place.position) {
     map.value.panTo(place.position)
     map.value.setZoom(14)
     syncMarkerSelection()
@@ -332,27 +355,97 @@ function revealPlaceOnMap(place) {
 }
 
 // Interactive Route Planning (PRD 10)
+function plainTextFromHtml(html) {
+  const element = document.createElement('div')
+  element.innerHTML = html || ''
+  return element.textContent?.trim() || '依 Google Maps 指示前進'
+}
+
+function clearMapRouteLayers() {
+  if (currentDirectionsRenderer) {
+    currentDirectionsRenderer.setMap(null)
+    currentDirectionsRenderer = null
+  }
+  if (currentPolyline) {
+    currentPolyline.setMap(null)
+    currentPolyline = null
+  }
+}
+
+async function renderGoogleDirections(origin, destination) {
+  const { DirectionsRenderer, DirectionsService, TravelMode } = await window.google.maps.importLibrary('routes')
+  const directionsService = new DirectionsService()
+  const result = await directionsService.route({
+    origin,
+    destination,
+    travelMode: TravelMode.TRANSIT,
+    provideRouteAlternatives: false,
+  })
+
+  clearMapRouteLayers()
+  currentDirectionsRenderer = new DirectionsRenderer({
+    map: map.value,
+    directions: result,
+    suppressMarkers: true,
+    preserveViewport: false,
+    polylineOptions: {
+      strokeColor: '#3c6254',
+      strokeOpacity: 0.92,
+      strokeWeight: 6,
+    },
+  })
+
+  const leg = result.routes?.[0]?.legs?.[0]
+  if (!leg) throw new Error('Google Directions did not return a route leg')
+
+  return {
+    totalDurationMinutes: Math.max(1, Math.round((leg.duration?.value || 0) / 60)),
+    totalDistanceMeters: leg.distance?.value || 0,
+    transitSummary: `Google Maps 大眾運輸約 ${leg.duration?.text || '時間待確認'}`,
+    segments: (leg.steps || []).map((step) => ({
+      mode: step.travel_mode || 'TRANSIT',
+      instruction: plainTextFromHtml(step.instructions),
+      duration_minutes: Math.max(1, Math.round((step.duration?.value || 0) / 60)),
+      distance_meters: step.distance?.value || 0,
+      is_shaded_or_underground: step.travel_mode === TravelMode.TRANSIT,
+    })),
+  }
+}
+
 async function planRouteToPlace(place) {
-  if (!place) return
+  if (!place?.position) {
+    Snackbar.warning('這筆活動沒有可信座標，無法規劃路線')
+    return
+  }
+  if (!hasUserLocation.value) {
+    const located = await requestCurrentLocation({ center: false, showFeedback: true })
+    if (!located) {
+      Snackbar.warning('未取得目前位置，因此沒有產生可能錯誤的起點路線')
+      return
+    }
+  }
   routeLoading.value = true
   try {
     const route = await routesService.computeRoute({
-      originLat: 25.0478,
-      originLng: 121.5319,
+      originLat: userLocation.value.lat,
+      originLng: userLocation.value.lng,
       destLat: place.position.lat,
       destLng: place.position.lng,
       destName: place.name,
       prioritizeShade: true,
     })
 
-    activeRoute.value = route
-
-    // Draw on Google Map
-    if (map.value && window.google?.maps) {
-      if (currentPolyline) {
-        currentPolyline.setMap(null)
+    let googleRoute = null
+    if (map.value && window.google?.maps?.importLibrary) {
+      try {
+        googleRoute = await renderGoogleDirections(userLocation.value, place.position)
+      } catch (directionsError) {
+        console.warn('Google Directions route failed:', directionsError)
       }
+    }
 
+    if (!googleRoute && route.hasRealPath && map.value && window.google?.maps) {
+      clearMapRouteLayers()
       currentPolyline = new window.google.maps.Polyline({
         path: route.path,
         geodesic: true,
@@ -367,10 +460,27 @@ async function planRouteToPlace(place) {
       map.value.fitBounds(bounds, 70)
     }
 
-    Snackbar.success(`已規劃最佳路徑：${route.transitSummary}`)
+    if (!googleRoute && !route.hasRealPath) {
+      activeRoute.value = null
+      clearMapRouteLayers()
+      Snackbar.warning('目前無法取得 Google Maps 實際路線，未顯示模擬路徑或固定步驟')
+      return
+    }
+
+    activeRoute.value = googleRoute
+      ? {
+          ...route,
+          ...googleRoute,
+          routeAdvice: `${googleRoute.transitSummary}。遮蔭與地下街比例為 SideQuest 估算值，實際行走請以 Google Maps 導航為準。`,
+        }
+      : route
+
+    Snackbar.success(`已取得實際路線：${activeRoute.value.transitSummary}`)
   } catch (err) {
     console.error('Route plan error:', err)
-    Snackbar.warning('已產生預估路線指南')
+    activeRoute.value = null
+    clearMapRouteLayers()
+    Snackbar.error('路線規劃失敗，未顯示模擬路線')
   } finally {
     routeLoading.value = false
   }
@@ -378,15 +488,25 @@ async function planRouteToPlace(place) {
 
 function clearRoute() {
   activeRoute.value = null
-  if (currentPolyline) {
-    currentPolyline.setMap(null)
-    currentPolyline = null
-  }
+  clearMapRouteLayers()
   centerMap()
   Snackbar.info('已清除路線')
 }
 
 // Heatmap Layer Toggle (PRD 8)
+function clearHeatmapOverlays() {
+  while (heatmapOverlays.length > 0) {
+    heatmapOverlays.pop()?.setMap(null)
+  }
+}
+
+function heatColor(score) {
+  if (score >= 80) return '#d94f3d'
+  if (score >= 65) return '#ef7f4d'
+  if (score >= 40) return '#e0aa3e'
+  return '#4b9278'
+}
+
 async function toggleHeatmap() {
   heatmapVisible.value = !heatmapVisible.value
   if (!map.value || !window.google?.maps) return
@@ -394,29 +514,34 @@ async function toggleHeatmap() {
   if (heatmapVisible.value) {
     try {
       const points = await crowdService.getHeatmapPoints()
-      if (window.google.maps.visualization?.HeatmapLayer) {
-        const heatmapData = points.map(
-          (p) => ({
-            location: new window.google.maps.LatLng(p.latitude, p.longitude),
-            weight: Math.max(1, p.weight * 10),
-          })
-        )
-        heatmapLayer = new window.google.maps.visualization.HeatmapLayer({
-          data: heatmapData,
-          radius: 40,
-          opacity: 0.75,
+      if (!points.length) throw new Error('Crowd API returned no heatmap points')
+
+      clearHeatmapOverlays()
+      const { Circle } = await window.google.maps.importLibrary('maps')
+      points.forEach((point) => {
+        const score = Number(point.crowd_score ?? point.weight * 100)
+        heatmapOverlays.push(new Circle({
           map: map.value,
-        })
-      }
-      Snackbar.success('已開啟即時人潮熱力圖圖層')
+          center: { lat: Number(point.latitude), lng: Number(point.longitude) },
+          radius: 240 + Math.max(0.1, Number(point.weight)) * 460,
+          fillColor: heatColor(score),
+          fillOpacity: 0.22 + Math.max(0.1, Number(point.weight)) * 0.22,
+          strokeColor: heatColor(score),
+          strokeOpacity: 0.7,
+          strokeWeight: 2,
+          clickable: false,
+          zIndex: Math.round(score),
+        }))
+      })
+      heatmapIsMock.value = points.every((point) => point.data_source !== 'live')
+      Snackbar.success(heatmapIsMock.value ? '已開啟 MVP 模擬人潮圖層' : '已開啟人潮圖層')
     } catch (err) {
       console.error('Heatmap load error:', err)
+      heatmapVisible.value = false
+      Snackbar.error('人潮圖層載入失敗')
     }
   } else {
-    if (heatmapLayer) {
-      heatmapLayer.setMap(null)
-      heatmapLayer = null
-    }
+    clearHeatmapOverlays()
     Snackbar.info('已關閉人潮熱力圖')
   }
 }
@@ -505,6 +630,8 @@ async function explore() {
     const result = await agentService.recommend({
       message: prompt.value.trim(),
       user_id: activePersona.value.id,
+      user_latitude: userLocation.value.lat,
+      user_longitude: userLocation.value.lng,
       events: places.value,
       onStreamEvent: (type, data) => {
         if (type === 'thought') {
@@ -512,7 +639,7 @@ async function explore() {
         } else if (type === 'understanding') {
           aiParsedCriteria.value = data
         } else if (type === 'markdown_chunk') {
-          aiReply.value += data.text || ''
+          aiReply.value += data.chunk || data.text || ''
         } else if (type === 'recommendation_cards') {
           aiRecommendations.value = data.cards || []
           aiDispersalSummary.value = data.dispersal_summary || ''
@@ -577,13 +704,79 @@ async function handleFeedback(eventId, isHelpful, tag) {
   }
 }
 
-function centerMap() {
+function updateUserLocationMarker() {
+  if (!map.value || !window.google?.maps || !hasUserLocation.value) return
+  userLocationOverlay?.setMap(null)
+
+  const content = document.createElement('div')
+  content.className = 'map-user-location'
+  content.setAttribute('title', '你的目前位置')
+
+  const overlay = new window.google.maps.OverlayView()
+  overlay.onAdd = () => overlay.getPanes().overlayMouseTarget.appendChild(content)
+  overlay.draw = () => {
+    const point = overlay.getProjection().fromLatLngToDivPixel(userLocation.value)
+    if (!point) return
+    content.style.left = `${point.x}px`
+    content.style.top = `${point.y}px`
+  }
+  overlay.onRemove = () => content.remove()
+  overlay.setMap(map.value)
+  userLocationOverlay = overlay
+}
+
+function requestCurrentLocation({ center = true, showFeedback = true } = {}) {
+  if (!navigator.geolocation) {
+    locationState.value = 'unsupported'
+    if (showFeedback) Snackbar.warning('此瀏覽器不支援定位功能')
+    return Promise.resolve(false)
+  }
+
+  locationState.value = 'requesting'
+  return new Promise((resolve) => {
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        userLocation.value = {
+          lat: position.coords.latitude,
+          lng: position.coords.longitude,
+        }
+        hasUserLocation.value = true
+        locationState.value = 'ready'
+        updateUserLocationMarker()
+        if (center && map.value) {
+          map.value.panTo(userLocation.value)
+          map.value.setZoom(14)
+        }
+        await loadWeather()
+        if (showFeedback) Snackbar.success('已更新為你的目前位置')
+        resolve(true)
+      },
+      (error) => {
+        locationState.value = error.code === error.PERMISSION_DENIED ? 'denied' : 'error'
+        if (showFeedback) {
+          Snackbar.warning(error.code === error.PERMISSION_DENIED
+            ? '定位權限未開啟，目前使用台北車站作為預設位置'
+            : '暫時無法取得目前位置')
+        }
+        resolve(false)
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 300000 },
+    )
+  })
+}
+
+async function centerMap() {
   if (!map.value) return
-  map.value.panTo({ lat: 25.0478, lng: 121.5319 })
-  map.value.setZoom(12)
+  if (!hasUserLocation.value) {
+    await requestCurrentLocation({ center: true, showFeedback: true })
+    return
+  }
+  map.value.panTo(userLocation.value)
+  map.value.setZoom(14)
 }
 
 function addMarker(place) {
+  if (!place.position) return
   const content = document.createElement('div')
   content.className = 'map-place-marker'
   content.style.setProperty('--pin-color', place.color)
@@ -634,11 +827,11 @@ async function initMap() {
     const loader = new Loader({
       apiKey: MAPS_API_KEY,
       version: 'weekly',
-      libraries: ['visualization', 'geometry'],
+      libraries: ['geometry'],
     })
     await loader.load()
     map.value = new window.google.maps.Map(mapElement.value, {
-      center: { lat: 25.0478, lng: 121.5319 },
+      center: TAIPEI_CENTER,
       zoom: 12,
       mapId: 'DEMO_MAP_ID',
       minZoom: 11,
@@ -647,7 +840,7 @@ async function initMap() {
       clickableIcons: true,
       gestureHandling: 'greedy',
     })
-    places.value.forEach(addMarker)
+    places.value.filter((place) => place.position).forEach(addMarker)
     syncMarkerSelection()
     mapState.value = 'ready'
   } catch (error) {
@@ -666,6 +859,7 @@ onMounted(async () => {
     loadEvents(),
   ])
   await initMap()
+  requestCurrentLocation({ center: false, showFeedback: false })
 })
 </script>
 
@@ -726,7 +920,13 @@ onMounted(async () => {
       </div>
 
       <!-- Map Floating Controls -->
-      <button class="map-control locate-control" aria-label="回到台北市中心" @click="centerMap">◎</button>
+      <button
+        class="map-control locate-control"
+        :class="{ active: hasUserLocation }"
+        :aria-label="hasUserLocation ? '回到我的目前位置' : '取得我的目前位置'"
+        :title="locationState === 'requesting' ? '正在取得位置…' : (hasUserLocation ? '回到我的目前位置' : '取得我的目前位置')"
+        @click="centerMap"
+      >◎</button>
       <button
         class="map-control heatmap-control"
         :class="{ active: heatmapVisible }"
@@ -753,6 +953,7 @@ onMounted(async () => {
       <div class="map-legend">
         <span><b class="legend-dot legend-cool"></b>人流舒適 (&lt;35)</span>
         <span><b class="legend-dot legend-warm"></b>人潮熱門 (&gt;65)</span>
+        <span v-if="heatmapVisible && heatmapIsMock">MVP 模擬人流</span>
       </div>
     </section>
 
@@ -806,7 +1007,7 @@ onMounted(async () => {
         </div>
 
         <nav class="detail-quick-actions" aria-label="活動動作">
-          <button type="button" class="primary" :disabled="routeLoading" @click="planRouteToPlace(detailPlace)">
+          <button type="button" class="primary" :disabled="routeLoading || !detailPlace.position" @click="planRouteToPlace(detailPlace)">
             <span aria-hidden="true">⌁</span>
             <strong>{{ routeLoading ? '規劃中…' : '規劃路線' }}</strong>
           </button>
@@ -854,12 +1055,14 @@ onMounted(async () => {
           <div>
             <span>♧</span>
             <small>目前人流</small>
-            <strong :class="crowdClass(detailPlace.crowd)">{{ crowdLabel(detailPlace.crowd) }} ({{ detailPlace.crowd }})</strong>
+            <strong :class="crowdClass(detailPlace.crowd)">
+              {{ crowdLabel(detailPlace.crowd) }}<template v-if="Number.isFinite(detailPlace.crowd)"> ({{ detailPlace.crowd }}){{ detailPlace.crowdIsMock ? ' · 模擬' : '' }}</template>
+            </strong>
           </div>
           <div>
             <span>◒</span>
             <small>曝曬程度</small>
-            <strong>{{ detailPlace.isIndoor ? '室內空調' : `戶外 ${detailPlace.sun}%` }}</strong>
+            <strong>{{ detailPlace.isIndoor ? '室內場地' : '戶外活動' }}</strong>
           </div>
           <div>
             <span>◷</span>
@@ -970,7 +1173,7 @@ onMounted(async () => {
           </div>
 
           <!-- Agent Markdown Stream Output -->
-          <p v-if="isExploring && !aiReply" class="agent-loading-copy">正在透過 Gemini 3.7 Flash 結合 Google Maps 評估最佳路線…</p>
+          <p v-if="isExploring && !aiReply" class="agent-loading-copy">正在透過 SideQuest 多準則引擎評估活動與交通條件…</p>
           <p v-else-if="aiError" class="agent-error-copy">{{ aiError }}</p>
           <p v-else class="agent-markdown-text">{{ aiReply }}</p>
         </div>
@@ -1119,14 +1322,14 @@ onMounted(async () => {
               <div class="metric-row">
                 <span class="metric crowd-metric" :class="crowdClass(place.crowd)">
                   <i class="metric-icon crowd-icon">♧</i> 人流 {{ crowdLabel(place.crowd) }}
-                  <strong>{{ place.crowd }}</strong>
+                  <strong v-if="Number.isFinite(place.crowd)">{{ place.crowd }}{{ place.crowdIsMock ? '*' : '' }}</strong>
                 </span>
                 <span class="metric">
-                  <i class="metric-icon sun-icon">◒</i> {{ place.isIndoor ? '室內空調' : `曝曬 ${place.sun}%` }}
+                  <i class="metric-icon sun-icon">◒</i> {{ place.isIndoor ? '室內場地' : '戶外活動' }}
                 </span>
                 <span class="metric"><i class="metric-icon time-icon">◷</i> {{ place.time }}</span>
               </div>
-              <div class="crowd-progress">
+              <div v-if="Number.isFinite(place.crowd)" class="crowd-progress" :title="place.crowdIsMock ? 'MVP 模擬人流資料' : '人流資料'">
                 <Progress :value="place.crowd" :color="place.color" track-color="#edece7" :height="4" />
               </div>
             </div>
