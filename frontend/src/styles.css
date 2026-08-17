@@ -2058,6 +2058,26 @@ button { cursor: pointer; }
   gap: 10px;
 }
 
+.google-signin-slot {
+  min-height: 32px;
+  display: inline-flex;
+  align-items: center;
+}
+
+.google-auth-error {
+  color: #b42318;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.google-auth-loading {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #475569;
+  font-size: 13px;
+}
+
 .btn-modal-google-auth {
   flex: 1;
   min-width: 220px;
