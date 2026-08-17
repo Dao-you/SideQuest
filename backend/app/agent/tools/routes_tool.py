@@ -42,6 +42,17 @@ class RoutesTool(BaseTool):
                 "description": "是否優先推薦地下街與遮蔭路徑",
                 "default": True,
             },
+            "preference": {
+                "type": "string",
+                "enum": ["fastest", "wheelchair", "more_bus", "more_subway", "less_walking", "more_shading", "less_crowded", "mixed"],
+                "description": "路線偏好：fastest(最快), wheelchair(無障礙/推車/大件行李), more_bus(公車+), more_subway(捷運+), less_walking(少走點), more_shading(避曬), less_crowded(避人潮), mixed(混合模式)",
+                "default": "fastest",
+            },
+            "wheelchair_accessible": {
+                "type": "boolean",
+                "description": "是否需要全程無障礙電梯與低地板車輛",
+                "default": False,
+            },
         },
         "required": ["origin_lat", "origin_lng", "destination_lat", "destination_lng"],
     }
@@ -54,6 +65,8 @@ class RoutesTool(BaseTool):
         destination_lng: float,
         destination_name: str = "目的地",
         prioritize_shade: bool = True,
+        preference: str = "fastest",
+        wheelchair_accessible: bool = False,
         **kwargs: Any,
     ) -> Dict[str, Any]:
         """Execute route calculation."""
@@ -65,15 +78,21 @@ class RoutesTool(BaseTool):
             dest_lng=destination_lng,
             dest_name=destination_name,
             prioritize_shade=prioritize_shade,
+            preference=preference,
+            wheelchair_accessible=wheelchair_accessible,
         )
         return {
             "status": "success",
             "destination": route.destination,
+            "preference": route.preference,
             "total_duration_minutes": route.total_duration_minutes,
             "total_distance_meters": route.total_distance_meters,
             "transit_summary": route.transit_summary,
             "underground_or_shaded_percentage": route.underground_or_shaded_percentage,
             "comfort_score": route.comfort_score,
             "route_advice": route.route_advice,
+            "accessibility_note": route.accessibility_note,
+            "crowd_note": route.crowd_note,
+            "multimodal": route.multimodal.model_dump() if route.multimodal else None,
             "segments": [s.model_dump() for s in route.segments],
         }
