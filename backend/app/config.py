@@ -23,7 +23,7 @@ class Settings(BaseSettings):
     # Google Maps & Auth Config
     GOOGLE_MAPS_API_KEY: str = Field(default="", description="Google Maps Platform API Key")
     GOOGLE_CLIENT_ID: str = Field(
-        default="917216410511-1tupuplbm4bnr76j7g9r4uii8i84olru.apps.googleusercontent.com",
+        default="",
         description="Google OAuth 2.0 Web Client ID",
     )
 

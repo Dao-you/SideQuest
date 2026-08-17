@@ -55,7 +55,7 @@ steps:
       - '--memory'
       - '512Mi'
       - '--set-env-vars'
-      - 'ENVIRONMENT=production,DEBUG=false,GCP_PROJECT_ID=${PROJECT_ID}'
+      - 'ENVIRONMENT=production,DEBUG=false,GCP_PROJECT_ID=${PROJECT_ID},GOOGLE_CLIENT_ID=${_GOOGLE_CLIENT_ID}'
 
 substitutions:
   _LOCATION: 'asia-east1'
@@ -63,6 +63,7 @@ substitutions:
   _IMAGE_NAME: 'backend'
   _SERVICE_NAME: 'sidequest-backend-test'
   _TAG: 'latest'
+  _GOOGLE_CLIENT_ID: ''
 
 images:
   - '${_LOCATION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/${_IMAGE_NAME}:${_TAG}'

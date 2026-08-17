@@ -373,57 +373,39 @@ class UserService(UserServiceInterface):
 
     def get_google_auth_config(self) -> GoogleAuthConfigResponse:
         """Fetch Google OAuth 2.0 Web Client configuration."""
-        client_id = settings.GOOGLE_CLIENT_ID or "917216410511-1tupuplbm4bnr76j7g9r4uii8i84olru.apps.googleusercontent.com"
+        client_id = settings.GOOGLE_CLIENT_ID.strip()
         return GoogleAuthConfigResponse(
             client_id=client_id,
-            enabled=True,
+            enabled=bool(client_id),
         )
 
     def login_google(self, req: GoogleAuthRequest) -> GoogleAuthResponse:
-        """Authenticate user with real Google Account identity or token."""
-        google_email = (req.email or "").strip()
-        google_name = (req.name or "").strip()
-        google_picture = (req.picture or "").strip()
-        google_sub = (req.sub or "").strip()
+        """Authenticate a Google Account using a cryptographically verified ID token."""
+        from google.auth.transport import requests as google_requests
+        from google.oauth2 import id_token
 
-        # 1. If Google ID Token is provided, decode or verify it
-        if req.id_token:
-            try:
-                from google.oauth2 import id_token
-                from google.auth.transport import requests as google_requests
-                client_id = settings.GOOGLE_CLIENT_ID or None
-                id_info = id_token.verify_oauth2_token(
-                    req.id_token,
-                    google_requests.Request(),
-                    audience=client_id,
-                )
-                google_email = id_info.get("email", google_email)
-                google_name = id_info.get("name", google_name)
-                google_picture = id_info.get("picture", google_picture)
-                google_sub = id_info.get("sub", google_sub)
-            except Exception:
-                # If strict verification failed, decode unverified JWT payload
-                import base64
-                import json
-                try:
-                    parts = req.id_token.split(".")
-                    if len(parts) >= 2:
-                        padded = parts[1] + "=" * ((4 - len(parts[1]) % 4) % 4)
-                        payload_bytes = base64.urlsafe_b64decode(padded)
-                        payload = json.loads(payload_bytes.decode("utf-8"))
-                        google_email = payload.get("email", google_email)
-                        google_name = payload.get("name", google_name)
-                        google_picture = payload.get("picture", google_picture)
-                        google_sub = payload.get("sub", google_sub)
-                except Exception:
-                    pass
+        client_id = settings.GOOGLE_CLIENT_ID.strip()
+        if not client_id:
+            raise RuntimeError("Google 登入尚未完成伺服器設定")
 
-        if not google_email:
-            google_email = "google.user@gmail.com"
+        try:
+            id_info = id_token.verify_oauth2_token(
+                req.credential,
+                google_requests.Request(),
+                audience=client_id,
+            )
+        except ValueError as exc:
+            raise ValueError("Google ID token 無效或已過期") from exc
+
+        google_sub = str(id_info.get("sub", "")).strip()
+        google_email = str(id_info.get("email", "")).strip()
+        google_name = str(id_info.get("name", "")).strip()
+        google_picture = str(id_info.get("picture", "")).strip()
+
+        if not google_sub or not google_email or id_info.get("email_verified") is not True:
+            raise ValueError("Google 帳號缺少已驗證的身分資料")
         if not google_name:
-            google_name = google_email.split("@")[0].capitalize()
-        if not google_sub:
-            google_sub = str(abs(hash(google_email)))
+            google_name = google_email.split("@", maxsplit=1)[0]
 
         # Unique user ID for Google account
         user_id = f"google_{google_sub[:16]}"
@@ -444,7 +426,7 @@ class UserService(UserServiceInterface):
                 user_id=user_id,
                 name=google_name,
                 email=google_email,
-                avatar_url=google_picture or f"https://api.dicebear.com/7.x/bottts/svg?seed={google_email}",
+                avatar_url=google_picture,
                 persona_title="Google 認證使用者",
                 favorite_categories=["exhibition", "tech", "cafe", "music"],
                 favorite_tags=["AI", "科技", "文創", "市集", "咖啡"],
@@ -455,18 +437,7 @@ class UserService(UserServiceInterface):
                 route_preference="shade_first",
                 google_account_connected=True,
                 google_email=google_email,
-                calendar_events=[
-                    GoogleCalendarEvent(
-                        event_id=f"gcal_sync_team_{user_id}",
-                        title="產品設計團隊每週 Sprint 檢討會議",
-                        start_time="2026-08-22T14:00:00+08:00",
-                        end_time="2026-08-22T16:30:00+08:00",
-                        location="信義區松仁路共享會議室",
-                        description="Google Calendar 雙向同步行事曆事件",
-                        category="work",
-                        is_sidequest_event=False,
-                    )
-                ],
+                calendar_events=[],
                 is_mock_account=False,
                 auth_provider="google",
                 google_sub=google_sub,
