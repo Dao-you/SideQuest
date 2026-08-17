@@ -2268,32 +2268,29 @@ button { cursor: pointer; }
   background: #1557b0;
 }
 
-/* Topbar Google Elements */
-.topbar-google-btn {
+/* Topbar Demo Login & Persona Elements */
+.topbar-demo-login-btn {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 12px;
-  background: #ffffff;
-  border: 1px solid #dadce0;
-  border-radius: 18px;
-  font-size: 12px;
+  padding: 6px 13px;
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid var(--border-color, #e5e7eb);
+  border-radius: 20px;
+  font-size: 13px;
   font-weight: 600;
-  color: #3c4043;
+  color: var(--text-primary, #1e293b);
   cursor: pointer;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
-  transition: all 0.15s ease;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+  transition: all 0.2s ease;
+  backdrop-filter: blur(8px);
 }
 
-.topbar-google-btn:hover {
-  border-color: #4285f4;
-  background: #f8faff;
-}
-
-.avatar-google-auth {
-  border-color: #4285f4 !important;
-  box-shadow: 0 0 0 2px rgba(66, 133, 244, 0.3) !important;
-  position: relative;
+.topbar-demo-login-btn:hover {
+  border-color: var(--accent, #3b82f6);
+  background: #ffffff;
+  transform: translateY(-1px);
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.08);
 }
 
 .topbar-avatar-img {
@@ -2303,21 +2300,29 @@ button { cursor: pointer; }
   border-radius: 50%;
 }
 
-.topbar-google-badge {
-  position: absolute;
-  bottom: -2px;
-  right: -2px;
-  background: #4285f4;
-  color: white;
-  font-size: 9px;
-  font-weight: 900;
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
+.switch-label-row {
   display: flex;
   align-items: center;
-  justify-content: center;
-  border: 1.5px solid #ffffff;
+  justify-content: space-between;
+  width: 100%;
+  margin-bottom: 8px;
+}
+
+.btn-open-persona-modal {
+  background: none;
+  border: none;
+  color: var(--accent, #2563eb);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+  transition: background 0.15s;
+}
+
+.btn-open-persona-modal:hover {
+  background: rgba(37, 99, 235, 0.08);
+  text-decoration: underline;
 }
 
 .btn-spinner {
