@@ -437,31 +437,58 @@ function routeStepInstruction(step) {
     : '依 Google Maps 路線前進'
 }
 
-async function renderGoogleDirections(origin, destination, isCurrentRequest = () => true) {
+const preferenceColorMap = {
+  fastest: '#10b981',      // Emerald Green
+  wheelchair: '#6366f1',   // Indigo (Accessible)
+  more_bus: '#2563eb',     // Royal Blue (Bus)
+  more_subway: '#059669',  // MRT Green
+  less_walking: '#0d9488', // Teal
+  more_shading: '#15803d', // Shaded Forest Green
+  less_crowded: '#0891b2', // Cyan
+  mixed: '#ea580c',        // YouBike Sunset Orange
+}
+
+async function renderGoogleDirections(origin, destination, preference = 'fastest', isCurrentRequest = () => true) {
   const { Route } = await window.google.maps.importLibrary('routes')
   const { LatLngBounds } = await window.google.maps.importLibrary('core')
   if (!isCurrentRequest()) return null
-  const { routes } = await Route.computeRoutes({
+
+  const travelMode = preference === 'mixed' ? 'BICYCLE' : 'TRANSIT'
+  const routeRequest = {
     origin,
     destination,
-    travelMode: 'TRANSIT',
-    departureTime: new Date(),
+    travelMode,
     computeAlternativeRoutes: false,
     language: 'zh-TW',
     region: 'TW',
     fields: ['path', 'legs', 'localizedValues'],
-  })
+  }
+
+  if (travelMode === 'TRANSIT') {
+    routeRequest.departureTime = new Date()
+    if (preference === 'more_bus') {
+      routeRequest.transitPreferences = { allowedTravelModes: ['BUS'] }
+    } else if (preference === 'more_subway') {
+      routeRequest.transitPreferences = { allowedTravelModes: ['SUBWAY', 'TRAIN', 'LIGHT_RAIL'] }
+    } else if (preference === 'less_walking') {
+      routeRequest.transitPreferences = { routingPreference: 'LESS_WALKING' }
+    }
+  }
+
+  const { routes } = await Route.computeRoutes(routeRequest)
   if (!isCurrentRequest()) return null
 
   const route = routes?.[0]
   const leg = route?.legs?.[0]
   if (!route || !leg) throw new Error('Google Routes did not return a route leg')
 
+  const strokeColor = preferenceColorMap[preference] || '#10b981'
+
   clearMapRouteLayers()
   route.createPolylines().forEach((polyline) => {
     polyline.setOptions?.({
-      strokeColor: '#3c6254',
-      strokeOpacity: 0.92,
+      strokeColor: strokeColor,
+      strokeOpacity: 0.95,
       strokeWeight: 6,
     })
     polyline.setMap(map.value)
@@ -476,13 +503,15 @@ async function renderGoogleDirections(origin, destination, isCurrentRequest = ()
     isGoogleRoute: true,
     totalDurationMinutes: Math.max(1, Math.round((leg.durationMillis || 0) / 60000)),
     totalDistanceMeters: leg.distanceMeters || 0,
-    transitSummary: `Google Maps 大眾運輸約 ${leg.localizedValues?.duration || '時間待確認'}`,
+    transitSummary: travelMode === 'BICYCLE'
+      ? `單車 / YouBike 騎乘約 ${leg.localizedValues?.duration || '時間待確認'}`
+      : `Google Maps 大眾運輸約 ${leg.localizedValues?.duration || '時間待確認'}`,
     segments: (leg.steps || []).map((step) => ({
-      mode: step.travelMode || 'TRANSIT',
+      mode: step.travelMode || (travelMode === 'BICYCLE' ? 'BICYCLE' : 'TRANSIT'),
       instruction: routeStepInstruction(step),
       duration_minutes: Math.max(1, Math.round((step.staticDurationMillis || 0) / 60000)),
       distance_meters: step.distanceMeters || 0,
-      is_shaded_or_underground: false,
+      is_shaded_or_underground: preference === 'more_shading' || step.travelMode === 'SUBWAY',
     })),
   }
 }
@@ -553,7 +582,7 @@ async function planRouteToPlace(place) {
     let googleRoute = null
     if (map.value && window.google?.maps?.importLibrary) {
       try {
-        googleRoute = await renderGoogleDirections(originCoords, destCoords, isCurrentRouteRequest)
+        googleRoute = await renderGoogleDirections(originCoords, destCoords, routePreference.value, isCurrentRouteRequest)
       } catch (directionsError) {
         console.warn('Google Directions route failed:', directionsError)
       }
@@ -562,10 +591,11 @@ async function planRouteToPlace(place) {
 
     if (!googleRoute && route.path && map.value && window.google?.maps) {
       clearMapRouteLayers()
+      const strokeColor = preferenceColorMap[routePreference.value] || '#10b981'
       currentPolyline = new window.google.maps.Polyline({
         path: route.path,
         geodesic: true,
-        strokeColor: '#3c6254',
+        strokeColor: strokeColor,
         strokeOpacity: 0.9,
         strokeWeight: 6,
         map: map.value,
