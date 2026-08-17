@@ -399,6 +399,7 @@ async function renderGoogleDirections(origin, destination) {
   if (!leg) throw new Error('Google Directions did not return a route leg')
 
   return {
+    isGoogleRoute: true,
     totalDurationMinutes: Math.max(1, Math.round((leg.duration?.value || 0) / 60)),
     totalDistanceMeters: leg.distance?.value || 0,
     transitSummary: `Google Maps 大眾運輸約 ${leg.duration?.text || '時間待確認'}`,
@@ -407,7 +408,7 @@ async function renderGoogleDirections(origin, destination) {
       instruction: plainTextFromHtml(step.instructions),
       duration_minutes: Math.max(1, Math.round((step.duration?.value || 0) / 60)),
       distance_meters: step.distance?.value || 0,
-      is_shaded_or_underground: step.travel_mode === TravelMode.TRANSIT,
+      is_shaded_or_underground: false,
     })),
   }
 }
@@ -945,7 +946,7 @@ onMounted(async () => {
         <div class="route-banner-icon">⌁</div>
         <div class="route-banner-info">
           <strong>{{ activeRoute.destination }}</strong>
-          <span>{{ activeRoute.transitSummary }} · 遮蔭/地下率 {{ activeRoute.shadePercentage }}%</span>
+          <span>{{ activeRoute.transitSummary }} · SideQuest 遮蔭估算 {{ activeRoute.shadePercentage }}%</span>
         </div>
         <button type="button" class="route-banner-close" aria-label="清除路線" @click="clearRoute">×</button>
       </div>
@@ -1031,12 +1032,12 @@ onMounted(async () => {
         <div v-if="activeRoute" class="route-guidance-card">
           <div class="route-card-header">
             <div>
-              <span class="route-tag">抗熱遮蔭路徑</span>
+              <span class="route-tag">{{ activeRoute.isGoogleRoute ? 'GOOGLE MAPS 大眾運輸' : '實際路徑' }}</span>
               <h3>{{ activeRoute.transitSummary }}</h3>
             </div>
             <div class="route-shade-badge">
               <strong>{{ activeRoute.shadePercentage }}%</strong>
-              <small>遮蔭/地下街</small>
+              <small>SideQuest 遮蔭估算</small>
             </div>
           </div>
           <p class="route-advice-copy">{{ activeRoute.routeAdvice }}</p>
@@ -1045,7 +1046,7 @@ onMounted(async () => {
               <span class="step-num">{{ idx + 1 }}</span>
               <div class="step-info">
                 <strong>{{ step.instruction }}</strong>
-                <small>{{ step.duration_minutes }} 分鐘 · {{ step.distance_meters }}m {{ step.is_shaded_or_underground ? '(遮蔭通道)' : '' }}</small>
+                <small>{{ step.duration_minutes }} 分鐘 · {{ step.distance_meters }}m</small>
               </div>
             </div>
           </div>
